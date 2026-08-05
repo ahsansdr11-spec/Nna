@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#08090d">
-    <meta name="description" content="Universal Media Downloader — unduh video, audio & musik dari YouTube, TikTok, Instagram, dan 19+ platform lainnya. Gratis & tanpa watermark.">
-    <title>Universal Media Downloader</title>
+    <meta name="description" content="KINGS DOWNLOADER — unduh video, audio & musik dari YouTube, TikTok, Instagram, dan 26+ platform lainnya. Gratis, tanpa watermark, tanpa batas.">
+    <title>KINGS DOWNLOADER — Unduh Media dari 26+ Platform</title>
     <link rel="icon" type="image/png" href="/static/img/logo_64.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=37">
+    <link rel="stylesheet" href="/static/style.css?v=39">
 </head>
 <body>
 
@@ -21,8 +21,8 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
             </div>
             <div class="brand-text">
-                <span class="brand-title">Universal <span class="accent">Downloader</span></span>
-                <span class="brand-sub">Media dari platform favoritmu</span>
+                <span class="brand-title">KINGS <span class="accent">DOWNLOADER</span></span>
+                <span class="brand-sub">👑 Unduh apa pun, tanpa batas</span>
             </div>
         </div>
         <nav class="topnav" aria-label="Navigasi utama">
@@ -75,7 +75,7 @@
             <div class="hero">
                 <p class="hero-eyebrow">Media downloader gratis &amp; open-source</p>
                 <h1 class="hero-title">Tempel tautannya,<br><span class="grad">langsung jadi file-nya.</span></h1>
-                <p class="hero-sub">Video, audio, atau musik dari YouTube, TikTok, Instagram, dan 19+ platform lainnya — diambil langsung dari sumbernya, tanpa watermark.</p>
+                <p class="hero-sub">Video, audio, atau musik dari YouTube, TikTok, Instagram, dan 26+ platform lainnya — diambil langsung dari sumbernya, tanpa watermark.</p>
 
                 <div class="urlbox">
                     <span class="urlbox-ic">
@@ -119,7 +119,7 @@
             <!-- Stats strip -->
             <div class="stats-strip">
                 <div class="stat">
-                    <span class="stat-num">19+</span>
+                    <span class="stat-num">26+</span>
                     <span class="stat-label">Platform</span>
                 </div>
                 <div class="stat">
@@ -142,6 +142,22 @@
                 <span class="sec-count" id="platform-count">—</span>
             </div>
             <div class="platform-grid" id="platform-grid"><!-- diisi JS --></div>
+
+            <!-- Saran platform (pindah dari Cara Pakai) -->
+            <div class="card mb-3 home-plat-req" style="margin-top:26px">
+                <div class="card-head">
+                    <span class="card-ic grad-ic">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>
+                    </span>
+                    <h3 class="card-title">Saran platform baru</h3>
+                </div>
+                <p class="muted">Mau platform yang belum ada? Usulkan di sini — request masuk ke kotak saran global semua pengguna.</p>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+                    <input type="text" id="plat-req-input" placeholder="Nama platform (mis. Telegram, 9GAG…)" style="flex:1;min-width:180px;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;padding:10px 13px;color:var(--text);outline:none">
+                    <button class="btn primary" onclick="submitPlatformRequest()">Usulkan</button>
+                </div>
+                <div class="plat-req-list" id="plat-req-list" style="margin-top:12px"></div>
+            </div>
 
             <!-- Hasil analisis -->
             <div id="info-card" class="info-card hidden"></div>
@@ -168,6 +184,16 @@
                     <button class="pill" data-f="albums" onclick="musicSetFilter('albums')">Album</button>
                     <button class="pill" data-f="artists" onclick="musicSetFilter('artists')">Artis</button>
                     <button class="pill" data-f="playlists" onclick="musicSetFilter('playlists')">Playlist</button>
+                </div>
+                <div class="music-tools">
+                    <button class="btn ghost mini" onclick="showMyPlaylists()">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+                        Playlist Saya
+                    </button>
+                    <button class="btn ghost mini" onclick="playerToggleQueue()">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+                        Antrean
+                    </button>
                 </div>
             </div>
             <div id="music-results" class="music-results"></div>
@@ -248,21 +274,6 @@
 
             <div class="card mb-3">
                 <div class="card-head">
-                    <span class="card-ic grad-ic">
-                        <svg viewBox="0 0 24 24" class="ic"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>
-                    </span>
-                    <h3 class="card-title">Saran platform baru</h3>
-                </div>
-                <p class="muted">Mau platform yang belum ada? Usulkan di sini — request masuk ke kotak saran global semua pengguna.</p>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-                    <input type="text" id="plat-req-input" placeholder="Nama platform (mis. VK, Telegram, 9GAG…)" style="flex:1;min-width:180px;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;padding:10px 13px;color:var(--text);outline:none">
-                    <button class="btn primary" onclick="submitPlatformRequest()">Usulkan</button>
-                </div>
-                <div class="plat-req-list" id="plat-req-list" style="margin-top:12px"></div>
-            </div>
-
-            <div class="card mb-3">
-                <div class="card-head">
                     <span class="card-ic">
                         <svg viewBox="0 0 24 24" class="ic"><path d="M12 8v4l3 3M12 21a9 9 0 110-18 9 9 0 010 18z"/></svg>
                     </span>
@@ -315,6 +326,13 @@
                     <li><b>Dailymotion / Archive.org / Twitch</b> — video: tempel tautan videonya. Twitch: clip publik jalan; video siaran yang butuh login tidak.</li>
                     <li><b>SoundCloud / Mixcloud / Bandcamp</b> — audio: tempel tautan lagu/show-nya, pilih <b>MP3</b>. Mix yang panjang (1 jam+) butuh waktu beberapa menit, wajar.</li>
                     <li><b>Streamable</b> — tempel tautan videonya (`streamable.com/...`) — video &amp; MP3, cepat.</li>
+                    <li><b>GitHub</b> — tempel link file (`github.com/…/blob/…`), release (`…/releases/download/…`), atau raw — file diunduh langsung dari CDN GitHub.</li>
+                    <li><b>MediaFire</b> — tempel link file (`mediafire.com/file/…`) — file diunduh langsung dari CDN MediaFire.</li>
+                    <li><b>Threads</b> — tempel link post (`threads.net/@nama/post/…`) — video &amp; foto dari CDN resmi.</li>
+                    <li><b>Snapchat</b> — tempel link Spotlight (`snapchat.com/spotlight/…`).</li>
+                    <li><b>Reddit</b> — tempel link post (`reddit.com/r/…/comments/…`) — video, galeri foto, atau gambar. Kalau server sedang diblokir Reddit, coba dari jaringan lain.</li>
+                    <li><b>Douyin</b> — tempel link video (`douyin.com/video/…` atau `v.douyin.com/…`). Butuh IP yang tidak diblokir Douyin.</li>
+                    <li><b>Rutube</b> — tempel link video (`rutube.ru/video/…`) — video &amp; MP3.</li>
                     <li><b>RedNote (Xiaohongshu)</b> — tempel tautan post (`xiaohongshu.com/explore/…` atau link share `xhslink.com/…`) — foto &amp; video. Kalau server sedang diblokir RedNote, tempel link share post-nya (dari tombol Bagikan) karena biasanya lebih berhasil.</li>
                     <li><b>Bilibili</b> — dua versi: <b>bilibili.com</b> (format <b>BV…</b>/<b>av…</b>, tautan pendek <b>b23.tv</b>) dan <b>bilibili.tv</b> (versi internasional, tautan <b>video/…</b>). Keduanya pakai API tanpa login.</li>
                     <li><b>Story Instagram/Facebook</b> — hanya story publik yang masih aktif; story yang sudah kedaluwarsa tidak bisa diunduh.</li>
@@ -336,7 +354,7 @@
     </main>
 
     <footer class="footer">
-        <span>Universal Media Downloader — gratis untuk semua.</span>
+        <span>KINGS DOWNLOADER 👑 — gratis untuk semua.</span>
         <span class="muted">Tanpa watermark · Hormati hak cipta.</span>
         <span class="ui-ver" title="Versi UI">Versi UI v<b id="ui-version">–</b></span>
     </footer>
@@ -347,27 +365,67 @@
         <div class="player-meta">
             <span id="player-title" class="no-translate">–</span>
             <span id="player-artist" class="no-translate player-artist">–</span>
+            <span id="player-msg" class="player-msg hidden"></span>
         </div>
         <div class="player-eq" id="player-eq" aria-hidden="true">
             <span></span><span></span><span></span><span></span>
         </div>
-        <div class="player-controls">
-            <button class="pbtn" id="player-prev" onclick="playerPrev()" title="Lagu sebelumnya" aria-label="Lagu sebelumnya">
-                <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zM20 6l-10 6 10 6z"/></svg>
+        <div class="player-center">
+            <div class="player-controls">
+                <button class="pbtn" id="player-prev" onclick="playerPrev()" title="Lagu sebelumnya" aria-label="Lagu sebelumnya">
+                    <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zM20 6l-10 6 10 6z"/></svg>
+                </button>
+                <button class="pbtn pbtn-main" id="player-play" onclick="playerToggle()" title="Putar / Jeda" aria-label="Putar / Jeda">
+                    <svg viewBox="0 0 24 24" id="player-play-ic"><path d="M8 5v14l11-7z"/></svg>
+                </button>
+                <button class="pbtn" id="player-next" onclick="playerNext()" title="Lagu berikutnya" aria-label="Lagu berikutnya">
+                    <svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM4 6l10 6-10 6z"/></svg>
+                </button>
+            </div>
+            <div class="player-seek-row">
+                <span id="player-cur" class="player-time">0:00</span>
+                <input type="range" id="player-seek" min="0" max="1000" value="0" oninput="playerSeekInput(this)" aria-label="Posisi lagu">
+                <span id="player-dur" class="player-time">0:00</span>
+            </div>
+        </div>
+        <div class="player-tools">
+            <button class="pbtn" id="player-lyrics-btn" onclick="playerToggleLyrics()" title="Lirik" aria-label="Lirik">
+                <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
             </button>
-            <button class="pbtn pbtn-main" id="player-play" onclick="playerToggle()" title="Putar / Jeda" aria-label="Putar / Jeda">
-                <svg viewBox="0 0 24 24" id="player-play-ic"><path d="M8 5v14l11-7z"/></svg>
+            <button class="pbtn" id="player-queue-btn" onclick="playerToggleQueue()" title="Antrean" aria-label="Antrean">
+                <svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
             </button>
-            <button class="pbtn" id="player-next" onclick="playerNext()" title="Lagu berikutnya" aria-label="Lagu berikutnya">
-                <svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM4 6l10 6-10 6z"/></svg>
+            <button class="pbtn pbtn-x" onclick="playerClose()" title="Tutup pemutar" aria-label="Tutup pemutar">
+                <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"/></svg>
             </button>
         </div>
-        <input type="range" id="player-seek" min="0" max="1000" value="0" oninput="playerSeekInput(this)" aria-label="Posisi lagu">
-        <span id="player-time" class="player-time">0:00 / 0:00</span>
-        <button class="pbtn pbtn-x" onclick="playerClose()" title="Tutup pemutar" aria-label="Tutup pemutar">
-            <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"/></svg>
-        </button>
         <audio id="player-audio" preload="none"></audio>
+    </div>
+
+    <!-- ================= PANEL LIRIK ================= -->
+    <div id="lyrics-panel" class="lyrics-panel hidden">
+        <div class="lyrics-head">
+            <span class="lyrics-title">Lirik</span>
+            <span id="lyrics-song" class="lyrics-song no-translate">–</span>
+            <button class="pbtn pbtn-x" onclick="playerToggleLyrics(false)" title="Tutup" aria-label="Tutup lirik">
+                <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"/></svg>
+            </button>
+        </div>
+        <div id="lyrics-body" class="lyrics-body">
+            <div class="music-empty">Memuat lirik…</div>
+        </div>
+    </div>
+
+    <!-- ================= DRAWER ANTREAN ================= -->
+    <div id="queue-panel" class="queue-panel hidden">
+        <div class="lyrics-head">
+            <span class="lyrics-title">Antrean</span>
+            <span id="queue-count" class="lyrics-song">0 lagu</span>
+            <button class="pbtn pbtn-x" onclick="playerToggleQueue(false)" title="Tutup" aria-label="Tutup antrean">
+                <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"/></svg>
+            </button>
+        </div>
+        <div id="queue-list" class="queue-list"></div>
     </div>
 
     <!-- ================= LOGIN ================= -->
@@ -377,7 +435,7 @@
                 <div class="brand-logo">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                 </div>
-                <h2>Masuk ke <span class="grad">Universal Downloader</span></h2>
+                <h2>Masuk ke <span class="grad">KINGS DOWNLOADER</span> 👑</h2>
                 <p class="muted">Buat akun gratis atau lanjut sebagai tamu. Riwayat download &amp; chat tersimpan di akunmu. Username bebas — pakai emoji, simbol, atau spasi sesukamu! 😎</p>
             </div>
             <div class="login-tabs">
@@ -401,6 +459,6 @@
     <!-- ================= TOAST ================= -->
     <div id="toast" class="toast"></div>
 
-    <script src="/static/app.js?v=37"></script>
+    <script src="/static/app.js?v=39"></script>
 </body>
 </html>

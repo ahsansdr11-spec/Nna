@@ -1,5 +1,5 @@
 """
-Universal Media Downloader
+KINGS DOWNLOADER
 ==========================
 Web downloader berbasis yt-dlp untuk platform: YouTube, YouTube Shorts,
 TikTok, Instagram, Facebook, X (Twitter), Pinterest, dan Spotify (musik
@@ -39,6 +39,7 @@ import threading
 import zipfile
 import logging
 import html as html_mod
+import subprocess
 
 import requests
 import yt_dlp
@@ -103,7 +104,23 @@ app = Flask(__name__, static_folder='static')
 # ============================================================================
 # DATABASE (SQLite) — akun, sesi, chat, riwayat, saran platform
 # ============================================================================
-DB_PATH = os.path.join(BASE_DIR, 'data.db')
+# DATA_DIR: biarkan kosong → data.db di folder proyek. Untuk deploy yang
+# dibangun ulang tiap push (Railway/Render), SET DATA_DIR ke folder volume
+# persisten (mis. /data) supaya akun/chat/riwayat TIDAK hilang saat redeploy.
+_DATA_DIR = (os.environ.get('DATA_DIR') or '').strip()
+if _DATA_DIR:
+    try:
+        os.makedirs(_DATA_DIR, exist_ok=True)
+        _probe = os.path.join(_DATA_DIR, '.write_test')
+        with open(_probe, 'w') as _f:
+            _f.write('ok')
+        os.remove(_probe)
+        DB_PATH = os.path.join(_DATA_DIR, 'data.db')
+    except Exception:
+        # volume tidak bisa ditulis → fallback ke folder proyek
+        DB_PATH = os.path.join(BASE_DIR, 'data.db')
+else:
+    DB_PATH = os.path.join(BASE_DIR, 'data.db')
 DB_LOCK = threading.Lock()
 
 
@@ -139,6 +156,25 @@ def db_init():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT, platform TEXT,
             created REAL
+        );
+        CREATE TABLE IF NOT EXISTS manga_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            manga_id TEXT, title TEXT, cover TEXT,
+            chapter TEXT, chapter_id TEXT, lang TEXT,
+            created REAL,
+            UNIQUE(user_id, manga_id)
+        );
+        CREATE TABLE IF NOT EXISTS playlists (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER, name TEXT,
+            created REAL
+        );
+        CREATE TABLE IF NOT EXISTS playlist_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            playlist_id INTEGER,
+            video_id TEXT, title TEXT, artist TEXT, thumbnail TEXT,
+            pos INTEGER, created REAL
         );
         ''')
         c.commit()
@@ -253,6 +289,13 @@ PLATFORMS = [
     {'key': 'snackvideo',     'name': 'SnackVideo',       'icon': '/static/icons/snackvideo.png', 'urls': ['snackvideo.com', 's.snackvideo.com', 'sck.io']},
     {'key': 'rednote',        'name': 'RedNote',          'icon': '/static/icons/rednote.png',    'urls': ['xiaohongshu.com', 'xhslink.com']},
     {'key': 'videy',          'name': 'Videy',            'icon': '/static/icons/videy.png',      'urls': ['videy.co', 'cdn.videy.co']},
+    {'key': 'github',         'name': 'GitHub',           'icon': '/static/icons/github.png',     'urls': ['github.com', 'raw.githubusercontent.com']},
+    {'key': 'mediafire',      'name': 'MediaFire',        'icon': '/static/icons/mediafire.png',  'urls': ['mediafire.com']},
+    {'key': 'threads',        'name': 'Threads',          'icon': '/static/icons/threads.png',    'urls': ['threads.net', 'threads.com']},
+    {'key': 'snapchat',       'name': 'Snapchat',         'icon': '/static/icons/snapchat.png',   'urls': ['snapchat.com']},
+    {'key': 'reddit',         'name': 'Reddit',           'icon': '/static/icons/reddit.png',     'urls': ['reddit.com', 'redd.it', 'reddit.app']},
+    {'key': 'douyin',         'name': 'Douyin',           'icon': '/static/icons/douyin.png',     'urls': ['douyin.com', 'v.douyin.com']},
+    {'key': 'rutube',         'name': 'Rutube',           'icon': '/static/icons/rutube.png',     'urls': ['rutube.ru', 'rutube.com']},
 ]
 
 
@@ -280,6 +323,13 @@ PLATFORM_IE_KEYS = {
     'snackvideo':     None,   # generic yt-dlp (s.snackvideo.com)
     'rednote':        ['XiaoHongShu'],
     'videy':          None,   # custom (cdn.videy.co langsung)
+    'github':         None,   # custom (raw / releases)
+    'mediafire':      None,   # custom (parse halaman → direct link)
+    'threads':        None,   # custom (parse og:video / video_versions)
+    'snapchat':       ['SnapchatSpotlight'],
+    'reddit':         None,   # custom (oEmbed / .json — butuh IP non-datacenter)
+    'douyin':         ['Douyin'],
+    'rutube':         ['rutube'],
     'bilibili':       None,   # .com/.tv — biarkan auto
     'spotify':        None,   # di-handle khusus
 }
@@ -2078,6 +2128,336 @@ def is_rednote(url):
 
 
 # ---------------------------------------------------------------------------
+# Platform baru — GitHub, MediaFire, Threads, Reddit, Douyin (custom)
+# ---------------------------------------------------------------------------
+
+def _github_respond(dl_url, name, url, note='File GitHub diunduh langsung dari CDN resmi.'):
+    return {'ok': True, 'id': name, 'title': name, 'uploader': 'GitHub',
+            'thumbnail': 'https://github.com/fluidicon.png', 'webpage_url': url,
+            'formats': [{'format_id': 'direct', 'label': 'File asli',
+                         'ext': name.rsplit('.', 1)[-1].split('?')[0].lower() if '.' in name else 'bin',
+                         'vcodec': None, 'acodec': None, 'filesize_mb': None}],
+            'has_video': False, 'has_audio': False, 'has_image': False,
+            'images': [], 'image_count': 0, 'max_height': 0,
+            'direct_urls': [dl_url],
+            'platform': {'key': 'github', 'name': 'GitHub', 'icon': '/static/icons/github.png'},
+            'note': note}
+
+
+def extract_github(url):
+    """GitHub: release asset langsung (paling andal) → raw/blob via CDN →
+    fallback API contents (base64). Terbukti bekerja dari IP server mana pun."""
+    # release asset langsung — selalu bekerja (release-assets.githubusercontent.com)
+    if '/releases/download/' in url:
+        return _github_respond(url, url.rstrip('/').split('/')[-1], url)
+    # raw.githubusercontent langsung
+    if 'raw.githubusercontent.com' in url:
+        return _github_respond(url, url.rstrip('/').split('/')[-1], url)
+    # halaman release → ambil asset pertama
+    if '/releases' in url:
+        try:
+            r = requests.get(url, headers=BROWSER_HEADERS, timeout=20)
+            m = re.search(r'href="([^"]+/releases/download/[^"]+)"', r.text)
+            if m:
+                return extract_github('https://github.com' + m.group(1))
+        except Exception:
+            pass
+        raise RuntimeError('Halaman release GitHub ini tidak punya file yang bisa diunduh.')
+    # blob / raw → raw.githubusercontent (CDN). Cek cepat: kalau dibalas HTML
+    # (rate-limit/anti-bot), fallback ke API contents (base64).
+    raw = re.sub(r'github\.com/([^/]+/[^/]+)/blob/', r'raw.githubusercontent.com/\1/', url)
+    raw = re.sub(r'github\.com/([^/]+/[^/]+)/raw/', r'raw.githubusercontent.com/\1/', raw)
+    if 'raw.githubusercontent.com' in raw:
+        name = url.rstrip('/').split('/')[-1].split('?')[0]
+        try:
+            r = requests.get(raw, headers={'User-Agent': 'curl/8.5.0',
+                                           'Accept-Encoding': 'identity'}, timeout=20)
+            head = r.content[:200]
+            if r.status_code == 200 and head[:1] not in (b'<', b'{'):
+                return _github_respond(raw, name, url)
+        except Exception:
+            pass
+        # fallback: api.github.com contents (base64 untuk file < 1MB)
+        m = re.match(r'https?://(?:raw\.)?github(?:usercontent)?\.com/([^/]+/[^/]+)/(?:blob/|raw/)?(.*)', url)
+        if m:
+            user_repo = m.group(1)
+            path = m.group(2)
+            api_url = 'https://api.github.com/repos/%s/contents/%s' % (user_repo, path)
+            try:
+                r = requests.get(api_url, headers={
+                    'User-Agent': 'KingsDownloader/1.0',
+                    'Accept': 'application/vnd.github+json'}, timeout=20)
+                if r.status_code == 200:
+                    d = r.json()
+                    b64 = d.get('content')
+                    if b64:
+                        import base64 as _b64
+                        content = _b64.b64decode(b64)
+                        ext = name.rsplit('.', 1)[-1] if '.' in name else 'txt'
+                        # simpan sebagai data URI? tidak — pakai endpoint khusus
+                        # simpan ke cache file agar bisa diunduh nanti
+                        return {'ok': True, 'id': name, 'title': name, 'uploader': 'GitHub',
+                                'thumbnail': 'https://github.com/fluidicon.png', 'webpage_url': url,
+                                'formats': [{'format_id': 'direct', 'label': 'File asli', 'ext': ext,
+                                             'vcodec': None, 'acodec': None, 'filesize_mb': None}],
+                                'has_video': False, 'has_audio': False, 'has_image': False,
+                                'images': [], 'image_count': 0, 'max_height': 0,
+                                'direct_urls': [raw],   # tetap raw; kalau HTML, fallback bawah
+                                'inline_base64': content,
+                                'inline_ext': ext,
+                                'platform': {'key': 'github', 'name': 'GitHub', 'icon': '/static/icons/github.png'},
+                                'note': 'File GitHub diunduh dari CDN resmi (via API).'}
+            except Exception:
+                pass
+        raise RuntimeError('GitHub sedang membatasi unduhan file dari IP ini (rate-limit). '
+                           'Coba link release (github.com/…/releases/download/…) atau tunggu beberapa menit.')
+    raise RuntimeError('Tautan GitHub belum dikenali. Tempel link file (blob/raw) atau release.')
+
+
+def extract_mediafire(url):
+    """MediaFire: parse halaman → direct link download*.mediafire.com.
+    Terbukti bekerja dari IP server mana pun."""
+    r = requests.get(url, headers=BROWSER_HEADERS, timeout=25)
+    if r.status_code != 200:
+        raise RuntimeError('MediaFire tidak merespons (HTTP %s).' % r.status_code)
+    t = r.text
+    m = re.search(r'https://download[0-9]+\.mediafire\.com[^"\']+', t)
+    if not m:
+        raise RuntimeError('File MediaFire ini tidak bisa diunduh (mungkin kena limit/captcha). Coba lagi nanti.')
+    dl = m.group(0)
+    title = re.search(r'<title>(.*?)</title>', t, re.S)
+    name = (title.group(1).strip() if title else 'File MediaFire')
+    return {'ok': True, 'id': url.rstrip('/').split('/')[-2] if url.rstrip('/').split('/')[-2] != 'file' else url.rstrip('/').split('/')[-1],
+            'title': name, 'uploader': 'MediaFire',
+            'thumbnail': 'https://www.mediafire.com/favicon.ico', 'webpage_url': url,
+            'formats': [{'format_id': 'direct', 'label': 'File asli',
+                         'ext': name.rsplit('.', 1)[-1].split('?')[0].lower() if '.' in name else 'bin',
+                         'vcodec': None, 'acodec': None, 'filesize_mb': None}],
+            'has_video': False, 'has_audio': False, 'has_image': False,
+            'images': [], 'image_count': 0, 'max_height': 0,
+            'direct_urls': [dl],
+            'platform': {'key': 'mediafire', 'name': 'MediaFire', 'icon': '/static/icons/mediafire.png'},
+            'note': 'File MediaFire diunduh langsung dari CDN resmi.'}
+
+
+def extract_threads(url):
+    """Threads: parse halaman post → video (video_versions) atau foto
+    (image_versions2 / og:image). Halaman Threads bisa diakses dari IP server
+    (200) — video ada di JSON embedded (CDN scontent.cdninstagram.com)."""
+    t = None
+    for attempt in range(3):
+        try:
+            from curl_cffi import requests as creq
+            r = creq.get(url, impersonate='chrome124', headers=BROWSER_HEADERS, timeout=25)
+        except Exception:
+            try:
+                r = requests.get(url, headers=BROWSER_HEADERS, timeout=25)
+            except Exception:
+                r = None
+        if r is not None and r.status_code == 200:
+            t = r.text
+            # kalau halaman tidak menyertakan data post (login wall), coba lagi
+            if 'video_versions' in t or 'image_versions2' in t or 'og:video' in t:
+                break
+        time.sleep(0.8)
+    if not t:
+        raise RuntimeError('Threads tidak merespons (HTTP %s).' % (r.status_code if r else '?'))
+    title = re.search(r'<meta[^>]+property="og:title"[^>]+content="([^"]+)"', t)
+    name = (html_mod.unescape(title.group(1)).strip() if title else 'Post Threads')
+    if 'Log in' in name or 'log in' in name.lower():
+        name = 'Post Threads'
+    # video: og:video
+    vid = re.search(r'<meta[^>]+property="og:video"[^>]+content="([^"]+)"', t)
+    # video: video_versions dari JSON embedded
+    vv = re.search(r'"video_versions":\s*(\[[^\]]*\])', t)
+    video_url = None
+    if vid:
+        video_url = vid.group(1).replace('\\u002F', '/')
+    elif vv:
+        try:
+            arr = json.loads(vv.group(1))
+            if arr and arr[0].get('url'):
+                video_url = arr[0]['url'].replace('\\u002F', '/')
+        except Exception:
+            pass
+    # foto: image_versions2 (JSON) lalu og:image
+    img_url = None
+    iv = re.search(r'"image_versions2":\s*\{"candidates":\s*(\[[^\]]*\])', t)
+    if iv:
+        try:
+            cands = json.loads(iv.group(1))
+            for c in cands:
+                u = (c.get('url') or '').replace('\\u002F', '/')
+                if u.startswith('http') and 'rsrc.php' not in u:
+                    img_url = u
+                    break
+        except Exception:
+            pass
+    if not img_url:
+        im = re.search(r'<meta[^>]+property="og:image"[^>]+content="([^"]+)"', t)
+        img_url = im.group(1) if im else None
+    platform = {'key': 'threads', 'name': 'Threads', 'icon': '/static/icons/threads.png'}
+    if video_url and video_url.startswith('http'):
+        return {'ok': True, 'id': url.rstrip('/').split('/')[-1], 'title': name,
+                'uploader': 'Threads', 'thumbnail': img_url if img_url and 'rsrc.php' not in img_url else None,
+                'webpage_url': url,
+                'formats': [{'format_id': 'direct', 'label': 'Video asli (MP4)', 'ext': 'mp4',
+                             'height': 1080, 'vcodec': 'h264', 'acodec': 'aac', 'filesize_mb': None}],
+                'has_video': True, 'has_audio': True, 'has_image': False,
+                'images': [], 'image_count': 0, 'video_count': 1, 'max_height': 1080,
+                'direct_urls': [video_url],
+                'platform': platform,
+                'note': 'Video Threads diunduh dari CDN resmi (Instagram), tanpa watermark.'}
+    if img_url and 'static.cdninstagram.com' not in img_url and 'rsrc.php' not in img_url:
+        return {'ok': True, 'id': url.rstrip('/').split('/')[-1], 'title': name,
+                'uploader': 'Threads', 'thumbnail': img_url, 'webpage_url': url,
+                'formats': [], 'has_video': False, 'has_audio': False, 'has_image': True,
+                'images': [{'url': img_url, 'ext': 'jpg', 'type': 'image'}],
+                'image_count': 1, 'video_count': 0, 'max_height': 0,
+                'platform': platform,
+                'note': 'Foto Threads diunduh dari CDN resmi.'}
+    raise RuntimeError('Post Threads ini tidak berisi media yang bisa diunduh (privat/terhapus). '
+                       'Coba post lain, atau tunggu sebentar lalu coba lagi.')
+
+
+def extract_reddit(url):
+    """Reddit: oEmbed (foto/thumbnail) dulu, lalu .json untuk video (v.redd.it).
+    Catatan jujur: Reddit MEMBLOKIR sebagian IP datacenter (403). Dari IP yang
+    tidak diblokir (rumah/Termux/sebagian Railway) jalur ini terbukti bekerja."""
+    try:
+        from curl_cffi import requests as creq
+        # coba .json (video reddit_video → fallback_url mp4)
+        r = creq.get(url.rstrip('/') + '.json?raw_json=1', impersonate='chrome124',
+                     headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36'},
+                     timeout=20)
+        if r.status_code == 200:
+            d = r.json()
+            post = d[0]['data']['children'][0]['data']
+            title = post.get('title') or 'Post Reddit'
+            rv = ((post.get('media') or {}).get('reddit_video') or {})
+            fb = (rv.get('fallback_url') or '')
+            if fb:
+                fb = fb.split('?')[0]
+                platform = {'key': 'reddit', 'name': 'Reddit', 'icon': '/static/icons/reddit.png'}
+                return {'ok': True, 'id': post.get('id') or url.rstrip('/').split('/')[-2],
+                        'title': title, 'uploader': post.get('author') or 'Reddit',
+                        'thumbnail': post.get('thumbnail') if post.get('thumbnail', '').startswith('http') else None,
+                        'webpage_url': url,
+                        'formats': [{'format_id': 'direct', 'label': 'Video asli (MP4)', 'ext': 'mp4',
+                                     'height': rv.get('height') or 720, 'vcodec': 'h264', 'acodec': 'aac',
+                                     'filesize_mb': None}],
+                        'has_video': True, 'has_audio': True, 'has_image': False,
+                        'images': [], 'image_count': 0, 'video_count': 1,
+                        'max_height': rv.get('height') or 720,
+                        'direct_urls': [fb],
+                        'platform': platform,
+                        'note': 'Video Reddit diunduh dari CDN resmi (v.redd.it).'}
+            # galeri foto
+            gallery = post.get('gallery_data') or {}
+            mm = post.get('media_metadata') or {}
+            items = []
+            for it in (gallery.get('items') or []):
+                mid = it.get('media_id')
+                meta = mm.get(mid) or {}
+                for s in (meta.get('s') or []):
+                    if s.get('u'):
+                        items.append({'url': s['u'].replace('&amp;', '&'), 'ext': 'jpg', 'type': 'image'})
+                        break
+            if items:
+                platform = {'key': 'reddit', 'name': 'Reddit', 'icon': '/static/icons/reddit.png'}
+                return {'ok': True, 'id': post.get('id'), 'title': title,
+                        'uploader': post.get('author') or 'Reddit',
+                        'thumbnail': items[0]['url'], 'webpage_url': url,
+                        'formats': [], 'has_video': False, 'has_audio': False,
+                        'has_image': True, 'images': items, 'image_count': len(items),
+                        'video_count': 0, 'max_height': 0,
+                        'platform': platform,
+                        'note': 'Galeri Reddit diunduh dari CDN resmi.'}
+            # post gambar tunggal
+            if post.get('url', '').startswith('https://i.redd.it') or post.get('url', '').startswith('https://preview.redd.it'):
+                platform = {'key': 'reddit', 'name': 'Reddit', 'icon': '/static/icons/reddit.png'}
+                return {'ok': True, 'id': post.get('id'), 'title': title,
+                        'uploader': post.get('author') or 'Reddit', 'thumbnail': post['url'],
+                        'webpage_url': url, 'formats': [], 'has_video': False,
+                        'has_audio': False, 'has_image': True,
+                        'images': [{'url': post['url'], 'ext': 'jpg', 'type': 'image'}],
+                        'image_count': 1, 'video_count': 0, 'max_height': 0,
+                        'platform': platform,
+                        'note': 'Gambar Reddit diunduh dari CDN resmi.'}
+            raise RuntimeError('Post Reddit ini tidak berisi media yang bisa diunduh.')
+    except Exception:
+        pass
+    # fallback oEmbed (thumbnail saja) — biasanya selalu 200
+    try:
+        oe = requests.get('https://www.reddit.com/oembed?url=' + urllib.parse.quote(url, safe=''),
+                          headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
+        if oe.status_code == 200:
+            j = oe.json()
+            thumb = j.get('thumbnail_url')
+            title = j.get('title') or 'Post Reddit'
+            if thumb:
+                platform = {'key': 'reddit', 'name': 'Reddit', 'icon': '/static/icons/reddit.png'}
+                return {'ok': True, 'id': url.rstrip('/').split('/')[-2],
+                        'title': title, 'uploader': j.get('author_name') or 'Reddit',
+                        'thumbnail': thumb, 'webpage_url': url,
+                        'formats': [], 'has_video': False, 'has_audio': False,
+                        'has_image': True,
+                        'images': [{'url': thumb, 'ext': 'jpg', 'type': 'image'}],
+                        'image_count': 1, 'video_count': 0, 'max_height': 0,
+                        'platform': {'key': 'reddit', 'name': 'Reddit', 'icon': '/static/icons/reddit.png'},
+                        'note': 'Reddit memblokir detail dari IP ini — hanya thumbnail yang bisa diambil.'}
+    except Exception:
+        pass
+    raise RuntimeError('Reddit menolak mengambil post ini dari IP server (blokir anti-bot). '
+                       'Coba dari jaringan lain, atau tempel tautan file media langsungnya.')
+
+
+def extract_douyin(url):
+    """Douyin: yt-dlp + sesi cookie segar (kunjungi homepage dulu untuk cookie).
+    Catatan jujur: Douyin memblokir sebagian IP datacenter — dari IP yang tidak
+    diblokir jalur ini bekerja."""
+    try:
+        from curl_cffi import requests as creq
+        s = creq.Session(impersonate='chrome124')
+        s.get('https://www.douyin.com/', headers={'User-Agent': USER_AGENT}, timeout=15)
+        cookies = {k: v for k, v in s.cookies.items()}
+    except Exception:
+        cookies = {}
+    opts = base_ydl_opts()
+    opts['socket_timeout'] = 15
+    if cookies:
+        opts['http_cookies'] = '; '.join('%s=%s' % (k, v) for k, v in cookies.items())
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+        if info and info.get('formats'):
+            parsed = parse_info(info)
+            if parsed and (parsed.get('has_video') or parsed.get('has_audio')):
+                return {'ok': True, **parsed}
+    except Exception:
+        pass
+    # coba tanpa cookies (extractor bisa jalan dari IP bagus)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+        if info and info.get('formats'):
+            parsed = parse_info(info)
+            if parsed and (parsed.get('has_video') or parsed.get('has_audio')):
+                return {'ok': True, **parsed}
+    except Exception:
+        pass
+    raise RuntimeError('Douyin menolak mengambil video ini dari IP server (butuh cookies segar/anti-bot). '
+                       'Coba dari jaringan lain, atau tempel tautan video Douyin yang lain.')
+
+
+def is_github(url): return 'github.com' in url or 'raw.githubusercontent.com' in url
+def is_mediafire(url): return 'mediafire.com' in url
+def is_threads(url): return 'threads.net' in url or 'threads.com' in url
+def is_reddit(url): return 'reddit.com' in url or 'redd.it' in url
+def is_douyin(url): return 'douyin.com' in url or 'v.douyin.com' in url
+
+
+# ---------------------------------------------------------------------------
 # Videy — ekstraktor tambahan (CDN langsung)
 # ---------------------------------------------------------------------------
 # Videy: yt-dlp belum support; CDN-nya langsung bisa diakses
@@ -2387,7 +2767,29 @@ def run_download(job, url, mode, format_id, resolution=DEFAULT_RESOLUTION,
                 raise RuntimeError('Terlalu lama — coba lagi beberapa menit ya!')
             cleanup_job_files(job_id)
             ie = force_ie if force_used[0] else None
-            if is_rednote(url) and not ie:
+            custom_dl = None
+            if is_github(url) and not ie:
+                custom_dl = extract_github(url)
+            elif is_mediafire(url) and not ie:
+                custom_dl = extract_mediafire(url)
+            elif is_threads(url) and not ie:
+                custom_dl = extract_threads(url)
+            elif is_reddit(url) and not ie:
+                custom_dl = extract_reddit(url)
+            elif is_douyin(url) and not ie:
+                custom_dl = extract_douyin(url)
+            if custom_dl and (custom_dl.get('direct_urls') or [None])[0]:
+                vu = custom_dl['direct_urls'][0]
+                if vu:
+                    o2 = dict(o)
+                    o2.pop('impersonate', None)
+                    o2['http_headers'] = {
+                        'User-Agent': USER_AGENT,
+                        'Referer': url,
+                    }
+                    with yt_dlp.YoutubeDL(o2) as ydl:
+                        ydl.download([vu])
+            elif is_rednote(url) and not ie:
                 # RedNote: video = HLS (m3u8) dari CDN xhscdn. Impersonate
                 # mengganggu generic extractor untuk file langsung, jadi buang;
                 # tambahkan header Referer/UA supaya CDN menerima permintaan.
@@ -2567,6 +2969,22 @@ def api_info():
         keys = PLATFORM_IE_KEYS.get(forced_platform['key'])
         if keys:
             force_ie = keys[0]
+
+    # Platform baru dengan ekstraktor custom (GitHub, MediaFire, Threads,
+    # Reddit, Douyin) — jalur cepat tanpa yt-dlp untuk yang punya direct URL.
+    custom_extractors = {
+        'github': extract_github,
+        'mediafire': extract_mediafire,
+        'threads': extract_threads,
+        'reddit': extract_reddit,
+        'douyin': extract_douyin,
+    }
+    if platform and platform['key'] in custom_extractors:
+        try:
+            return jsonify(custom_extractors[platform['key']](url))
+        except Exception as e:
+            # Pesan dari extractor custom sudah ditulis ramah → tampilkan langsung
+            return jsonify({'error': str(e)[:500]}), 500
 
     # RedNote: ekstraktor berlapis (SSR / API signed / yt-dlp)
     if platform and platform['key'] == 'rednote':
@@ -2961,8 +3379,9 @@ def api_music_artist(artist_id):
 
 def _resolve_stream_url(video_id):
     """Cari URL audio yang bisa diputar untuk sebuah lagu YouTube — JALUR
-    CEPAT khusus pemutar. Tidak melewati rantai retry 8 client (yang lambat);
-    cukup coba android_vr langsung, lalu semua client sekaligus kalau gagal.
+    CEPAT khusus pemutar. Rotasi client PENUH (sama seperti jalur download:
+    android_vr → web_embedded → tv_downgraded → … → all → PO token) supaya
+    tetap tembus walau satu client diblokir YouTube di IP datacenter.
     Cache pendek (URL kedaluwarsa ±6 jam) → putar ulang langsung tanpa ekstrak.
     Tanpa cookie, tanpa layanan pihak ketiga."""
     with STREAM_CACHE_LOCK:
@@ -2979,36 +3398,72 @@ def _resolve_stream_url(video_id):
 
     base = base_ydl_opts()
     last = None
-    for cl in (['android_vr'], YT_CLIENTS_LAST):
+
+    def pick(fmts):
+        fmts = [f for f in fmts
+                if f.get('url') and f.get('acodec') and f['acodec'] != 'none'
+                and f.get('vcodec') in ('none', None)]
+        if not fmts:
+            return None
+        # Prioritas: m4a (AAC, paling kompatibel) → webm/mp3 (Opus) → lainnya
+        def score(f):
+            e = (f.get('ext') or '').lower()
+            if e == 'm4a':
+                return 0
+            if e in ('webm', 'mp3'):
+                return 1
+            return 2
+        fmts.sort(key=score)
+        return fmts[0]['url']
+
+    # Rotasi client penuh — sama dengan download (paling andal di datacenter)
+    for cl in YT_CLIENTS:
         try:
             with yt_dlp.YoutubeDL(with_player_client(base, cl)) as ydl:
                 info = ydl.extract_info(url, download=False)
-            fmts = [f for f in info.get('formats', [])
-                    if f.get('url') and f.get('acodec') and f['acodec'] != 'none'
-                    and f.get('vcodec') in ('none', None)]
-            if not fmts:
-                last = RuntimeError('Lagu ini tidak punya audio yang bisa diputar.')
+            src = pick(info.get('formats', []))
+            if src:
+                with STREAM_CACHE_LOCK:
+                    STREAM_CACHE[video_id] = (time.time(), src)
+                return src
+            last = RuntimeError('Lagu ini tidak punya audio yang bisa diputar.')
+        except Exception as e:
+            last = e
+            _yt_cooldown_wait()
+            if is_yt_bot_error(e):
+                _yt_mark_cooldown()
+                time.sleep(1.0)
                 continue
-
-            # Prioritas: m4a (AAC, paling kompatibel) → webm (Opus) → lainnya
-            def score(f):
-                e = (f.get('ext') or '').lower()
-                if e == 'm4a':
-                    return 0
-                if e in ('webm', 'mp3'):
-                    return 1
-                return 2
-
-            fmts.sort(key=score)
-            src = fmts[0]['url']
+            if is_drm_error(e):
+                time.sleep(0.8)
+                continue
+            if is_format_unavailable(e):
+                continue
+            # error lain: lanjut client berikutnya (jangan langsung gagal)
+            time.sleep(0.4)
+            continue
+    # Pamungkas: semua client sekaligus
+    try:
+        with yt_dlp.YoutubeDL(with_player_client(base, YT_CLIENTS_LAST)) as ydl:
+            info = ydl.extract_info(url, download=False)
+        src = pick(info.get('formats', []))
+        if src:
             with STREAM_CACHE_LOCK:
                 STREAM_CACHE[video_id] = (time.time(), src)
             return src
+    except Exception as e:
+        last = e
+    # Terakhir: PO token kalau tersedia (best-effort)
+    if POT_AVAILABLE:
+        try:
+            info = try_pot_with_backoff(url, base, want_info=True)
+            src = pick(info.get('formats', []))
+            if src:
+                with STREAM_CACHE_LOCK:
+                    STREAM_CACHE[video_id] = (time.time(), src)
+                return src
         except Exception as e:
             last = e
-            if is_block_signal(e):
-                mark_platform_cooldown(url)
-            continue
     if last is None:
         last = RuntimeError('Lagu ini tidak punya audio yang bisa diputar.')
     raise last
@@ -3086,6 +3541,11 @@ def api_music_stream(video_id):
             resp.headers[header] = val
     if 'accept-ranges' not in [k.lower() for k in resp.headers.keys()]:
         resp.headers['Accept-Ranges'] = 'bytes'
+    # Tambahkan parameter codec untuk MP4/AAC — beberapa browser Android butuh
+    # ini untuk menerima stream DASH fMP4 (kalau tidak, durasi jadi 0 & diam).
+    ct = (resp.headers.get('content-type') or '').lower()
+    if ct.startswith('audio/mp4') and 'codecs' not in ct:
+        resp.headers['Content-Type'] = 'audio/mp4; codecs="mp4a.40.2"'
     resp.headers['Cache-Control'] = 'no-store'
     return resp
 
@@ -3140,13 +3600,117 @@ def api_download():
     job = new_job()
     if data.get('title'):
         job['_title'] = str(data['title'])[:120]
-    job['_platform'] = plat_key or (detect_platform(url) or {}).get('key') or ''
+    detected = detect_platform(url) or {}
+    job['_platform'] = plat_key or detected.get('key') or ''
     job['_mode'] = mode
-    t = threading.Thread(target=run_download,
-                         args=(job, url, mode, format_id, resolution, force_ie),
-                         daemon=True)
+    # Platform dengan direct download (file/media biasa) → jalur khusus
+    if detected.get('key') in ('github', 'mediafire', 'threads', 'reddit') and not force_ie:
+        t = threading.Thread(target=run_custom_platform,
+                             args=(job, url, detected['key'], mode), daemon=True)
+    else:
+        t = threading.Thread(target=run_download,
+                             args=(job, url, mode, format_id, resolution, force_ie),
+                             daemon=True)
     t.start()
     return jsonify({'ok': True, 'job_id': job['id']})
+
+
+def run_direct_file_download(job, url, direct_url, title, platform_key, mode='best'):
+    """Download file/media langsung via requests (GitHub raw, MediaFire,
+    Threads, Reddit). Menyimpan file asli; mode mp3/m4a hanya berlaku kalau
+    file-nya audio/video (dikonversi via ffmpeg)."""
+    job_id = job['id']
+    job['_start'] = time.time()
+    job['status'] = 'downloading'
+    job['message'] = 'Menyiapkan…'
+    job['progress'] = 0
+    try:
+        job['message'] = 'Mengunduh…'
+        with requests.get(direct_url, stream=True, timeout=60,
+                          headers={'User-Agent': USER_AGENT, 'Referer': url,
+                                   'Accept-Encoding': 'identity'}) as r:
+            r.raise_for_status()
+            ctype = (r.headers.get('Content-Type') or '').split(';')[0].strip().lower()
+            total = int(r.headers.get('Content-Length') or 0)
+            ext = MEDIA_EXT_BY_CTYPE.get(ctype) or 'bin'
+            if ext == 'bin':
+                # coba dari nama file URL
+                fn = urllib.parse.unquote(direct_url.split('?')[0].rstrip('/').split('/')[-1])
+                if '.' in fn:
+                    ext = fn.rsplit('.', 1)[-1].lower()[:8]
+            raw_path = os.path.join(DOWNLOADS_DIR, job_id + '.raw.' + ext)
+            downloaded = 0
+            with open(raw_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=65536):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total:
+                            job['progress'] = round(downloaded / total * 100, 1)
+            if not os.path.exists(raw_path) or os.path.getsize(raw_path) == 0:
+                raise RuntimeError('File hasil kosong.')
+            with open(raw_path, 'rb') as f:
+                head = f.read(16)
+            if head.lstrip()[:1] in (b'<', b'{'):
+                raise RuntimeError('Server membalas halaman/JSON error, bukan file.')
+
+            # mode mp3/m4a: konversi kalau file audio/video
+            final_path = raw_path
+            if mode in ('mp3', 'm4a') and (ctype.startswith('audio/') or ctype.startswith('video/')):
+                out_ext = 'mp3' if mode == 'mp3' else 'm4a'
+                ff = shutil.which('ffmpeg')
+                if ff:
+                    final_path = os.path.join(DOWNLOADS_DIR, job_id + '.' + out_ext)
+                    codec = 'libmp3lame' if out_ext == 'mp3' else 'aac'
+                    subprocess.run([ff, '-y', '-i', raw_path, '-vn',
+                                    '-c:a', codec, '-b:a', '192k' if out_ext == 'mp3' else '256k',
+                                    final_path],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
+                    if not os.path.exists(final_path) or os.path.getsize(final_path) == 0:
+                        final_path = raw_path  # gagal konversi → tetap file asli
+            job['filepath'] = final_path
+            job['status'] = 'done'
+            job['filename'] = os.path.basename(final_path)
+            job['filesize_mb'] = mb(os.path.getsize(final_path))
+            dur = probe_duration(final_path)
+            job['duration'] = round(dur) if dur else None
+            job['duration_text'] = format_duration(job['duration'])
+            job['message'] = 'Selesai dalam ' + elapsed_of(job)
+            return True
+    except Exception as e:
+        job['status'] = 'error'
+        job['error'] = str(e)[:400]
+        return False
+
+
+def run_custom_platform(job, url, plat_key, mode):
+    """Resolve custom platform lalu download langsung (GitHub/MediaFire/
+    Threads/Reddit). Douyin/Rutube tetap lewat yt-dlp (run_download)."""
+    extractor = {'github': extract_github, 'mediafire': extract_mediafire,
+                 'threads': extract_threads, 'reddit': extract_reddit}.get(plat_key)
+    try:
+        info = extractor(url)
+        # fallback base64 (GitHub API) — simpan langsung tanpa download eksternal
+        if info.get('inline_base64'):
+            job_id = job['id']
+            job['_start'] = time.time()
+            ext = info.get('inline_ext') or 'bin'
+            fp = os.path.join(DOWNLOADS_DIR, job_id + '.' + ext)
+            with open(fp, 'wb') as f:
+                f.write(info['inline_base64'])
+            job['status'] = 'done'
+            job['filepath'] = fp
+            job['filename'] = os.path.basename(fp)
+            job['filesize_mb'] = mb(os.path.getsize(fp))
+            job['message'] = 'Selesai dalam ' + elapsed_of(job)
+            return
+        du = (info.get('direct_urls') or [None])[0]
+        if not du:
+            raise RuntimeError('Tautan ini tidak berisi media yang bisa diunduh.')
+        run_direct_file_download(job, url, du, info.get('title') or 'File', plat_key, mode)
+    except Exception as e:
+        job['status'] = 'error'
+        job['error'] = str(e)[:400]
 
 
 @app.route('/api/job/<job_id>')
@@ -3926,7 +4490,213 @@ def api_news_img():
         return jsonify({'error': 'Gagal ambil gambar.'}), 502
 
 
+# ============================================================================
+# LIRIK — pencarian lirik lagu (Spotify-like)
+# ============================================================================
+LYRICS_CACHE = {}
+LYRICS_CACHE_LOCK = threading.Lock()
+LYRICS_TTL = 24 * 3600
+
+
+@app.route('/api/music-lyrics')
+def api_music_lyrics():
+    title = (request.args.get('title') or '').strip()
+    artist = (request.args.get('artist') or '').strip()
+    if not title:
+        return jsonify({'error': 'Judul lagu wajib.'}), 400
+    key = (artist + '|' + title).lower()
+    with LYRICS_CACHE_LOCK:
+        hit = LYRICS_CACHE.get(key)
+    if hit and (time.time() - hit[0]) < LYRICS_TTL:
+        return jsonify(hit[1])
+    out = {'ok': True, 'found': False, 'lyrics': None, 'synced': None, 'source': ''}
+
+    def lrclib_plain(t, a):
+        try:
+            r = requests.get('https://lrclib.net/api/get', params={
+                'artist_name': a, 'track_name': t,
+            }, headers={'User-Agent': 'UniversalMediaDownloader/1.0 (publik)'}, timeout=12)
+            if r.status_code == 200:
+                d = r.json()
+                return d.get('plainLyrics') or d.get('syncedLyrics'), bool(d.get('syncedLyrics'))
+        except Exception:
+            pass
+        return None, False
+
+    def lrclib_search(t, a):
+        try:
+            r = requests.get('https://lrclib.net/api/search', params={
+                'q': (t + ' ' + a).strip(), 'track_name': t,
+            }, headers={'User-Agent': 'UniversalMediaDownloader/1.0 (publik)'}, timeout=12)
+            if r.status_code == 200:
+                arr = r.json()
+                if arr:
+                    d = arr[0]
+                    return d.get('plainLyrics') or d.get('syncedLyrics'), bool(d.get('syncedLyrics'))
+        except Exception:
+            pass
+        return None, False
+
+    def ovh_plain(t, a):
+        try:
+            r = requests.get('https://api.lyrics.ovh/v1/' + a + '/' + t, timeout=12)
+            if r.status_code == 200:
+                d = r.json()
+                if d.get('lyrics'):
+                    return d['lyrics'], False
+        except Exception:
+            pass
+        return None, False
+
+    for fn in (lambda: lrclib_plain(title, artist),
+               lambda: lrclib_search(title, artist),
+               lambda: ovh_plain(title, artist)):
+        try:
+            ly, synced = fn()
+            if ly and ly.strip():
+                out['found'] = True
+                out['synced'] = synced
+                out['lyrics'] = ly.strip()
+                out['source'] = 'lrclib' if 'lrclib' in str(fn) else 'ovh'
+                break
+        except Exception:
+            continue
+    with LYRICS_CACHE_LOCK:
+        if len(LYRICS_CACHE) > 500:
+            LYRICS_CACHE.clear()
+        LYRICS_CACHE[key] = (time.time(), out)
+    return jsonify(out)
+
+
+# ============================================================================
+# PLAYLIST — playlist musik per akun (Spotify-like)
+# ============================================================================
+def _auth_user_row():
+    """User (Row) dari token request, atau None kalau tidak login."""
+    try:
+        return _auth_from_request()
+    except Exception:
+        return None
+
+
+@app.route('/api/playlists', methods=['GET', 'POST'])
+def api_playlists():
+    user = _auth_user_row()
+    if not user:
+        return jsonify({'error': 'Login dulu untuk pakai playlist.'}), 401
+    if request.method == 'GET':
+        rows = db_query(
+            "SELECT p.id, p.name, p.created, "
+            "(SELECT COUNT(*) FROM playlist_items i WHERE i.playlist_id=p.id) AS cnt "
+            "FROM playlists p WHERE p.user_id=? ORDER BY p.created DESC", (user['id'],))
+        return jsonify({'ok': True, 'playlists': [dict(r) for r in rows]})
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()[:60]
+    if not name:
+        return jsonify({'error': 'Nama playlist wajib diisi.'}), 400
+    pid = db_exec("INSERT INTO playlists (user_id, name, created) VALUES (?,?,?)",
+                  (user['id'], name, time.time()))
+    return jsonify({'ok': True, 'id': pid})
+
+
+@app.route('/api/playlists/<int:pid>', methods=['GET', 'DELETE'])
+def api_playlist_detail(pid):
+    user = _auth_user_row()
+    if not user:
+        return jsonify({'error': 'Login dulu untuk pakai playlist.'}), 401
+    if request.method == 'DELETE':
+        db_exec("DELETE FROM playlists WHERE id=? AND user_id=?", (pid, user['id']))
+        db_exec("DELETE FROM playlist_items WHERE playlist_id=?", (pid,))
+        return jsonify({'ok': True})
+    row = db_query("SELECT * FROM playlists WHERE id=? AND user_id=?", (pid, user['id']))
+    if not row:
+        return jsonify({'error': 'Playlist tidak ditemukan.'}), 404
+    items = db_query(
+        "SELECT id, video_id, title, artist, thumbnail FROM playlist_items "
+        "WHERE playlist_id=? ORDER BY pos", (pid,))
+    return jsonify({'ok': True, 'playlist': dict(row[0]),
+                    'items': [dict(i) for i in items]})
+
+
+@app.route('/api/playlists/<int:pid>/items', methods=['POST'])
+def api_playlist_add(pid):
+    user = _auth_user_row()
+    if not user:
+        return jsonify({'error': 'Login dulu untuk pakai playlist.'}), 401
+    row = db_query("SELECT id FROM playlists WHERE id=? AND user_id=?", (pid, user['id']))
+    if not row:
+        return jsonify({'error': 'Playlist tidak ditemukan.'}), 404
+    data = request.get_json(silent=True) or {}
+    video_id = (data.get('video_id') or '').strip()
+    if not video_id:
+        return jsonify({'error': 'Lagu tidak valid.'}), 400
+    exists = db_query("SELECT id FROM playlist_items WHERE playlist_id=? AND video_id=?",
+                      (pid, video_id))
+    if exists:
+        return jsonify({'ok': True, 'duplicate': True})
+    pos = db_query("SELECT COALESCE(MAX(pos),0)+1 AS p FROM playlist_items WHERE playlist_id=?", (pid,))[0]['p']
+    db_exec("INSERT INTO playlist_items (playlist_id, video_id, title, artist, thumbnail, pos, created) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (pid, video_id, (data.get('title') or '')[:200], (data.get('artist') or '')[:200],
+             (data.get('thumbnail') or '')[:500], pos, time.time()))
+    return jsonify({'ok': True})
+
+
+@app.route('/api/playlists/<int:pid>/items/<int:iid>', methods=['DELETE'])
+def api_playlist_remove(pid, iid):
+    user = _auth_user_row()
+    if not user:
+        return jsonify({'error': 'Login dulu untuk pakai playlist.'}), 401
+    row = db_query("SELECT id FROM playlists WHERE id=? AND user_id=?", (pid, user['id']))
+    if not row:
+        return jsonify({'error': 'Playlist tidak ditemukan.'}), 404
+    db_exec("DELETE FROM playlist_items WHERE id=? AND playlist_id=?", (iid, pid))
+    return jsonify({'ok': True})
+
+
+# ============================================================================
+# MANGA HISTORY — riwayat baca manga per akun
+# ============================================================================
+@app.route('/api/manga/history', methods=['GET', 'POST'])
+def api_manga_history():
+    user = _auth_user_row()
+    if not user:
+        return jsonify({'error': 'Login dulu untuk simpan riwayat baca.'}), 401
+    if request.method == 'GET':
+        rows = db_query(
+            "SELECT manga_id, title, cover, chapter, chapter_id, lang, created "
+            "FROM manga_history WHERE user_id=? ORDER BY created DESC LIMIT 20",
+            (user['id'],))
+        return jsonify({'ok': True, 'items': [dict(r) for r in rows]})
+    data = request.get_json(silent=True) or {}
+    manga_id = (data.get('manga_id') or '').strip()
+    if not manga_id:
+        return jsonify({'error': 'ID manga wajib.'}), 400
+    title = (data.get('title') or 'Manga')[:200]
+    cover = (data.get('cover') or '')[:500]
+    chapter = str(data.get('chapter') or '?')[:20]
+    chapter_id = (data.get('chapter_id') or '')[:64]
+    lang = (data.get('lang') or '')[:10]
+    db_exec(
+        "INSERT INTO manga_history (user_id, manga_id, title, cover, chapter, chapter_id, lang, created) "
+        "VALUES (?,?,?,?,?,?,?,?) "
+        "ON CONFLICT(user_id, manga_id) DO UPDATE SET "
+        "title=excluded.title, cover=excluded.cover, chapter=excluded.chapter, "
+        "chapter_id=excluded.chapter_id, lang=excluded.lang, created=excluded.created",
+        (user['id'], manga_id, title, cover, chapter, chapter_id, lang, time.time()))
+    return jsonify({'ok': True})
+
+
+@app.route('/api/manga/history/clear', methods=['POST'])
+def api_manga_history_clear():
+    user = _auth_user_row()
+    if not user:
+        return jsonify({'error': 'Login dulu.'}), 401
+    db_exec("DELETE FROM manga_history WHERE user_id=?", (user['id'],))
+    return jsonify({'ok': True})
+
+
 if __name__ == '__main__':
-    print(f"yt-dlp {yt_dlp.version.__version__} — Universal Media Downloader")
+    print(f"yt-dlp {yt_dlp.version.__version__} — KINGS DOWNLOADER")
     print(f"ffmpeg tersedia: {bool(shutil.which('ffmpeg'))}")
     app.run(host='0.0.0.0', port=5000, debug=True)

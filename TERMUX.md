@@ -1,4 +1,4 @@
-# 📱 Panduan Lengkap: Menjalankan di Termux (Android) — dari Nol
+# 👑 KINGS DOWNLOADER — Panduan Lengkap Menjalankan di Termux (Android)
 
 Panduan ini khusus untuk **Termux di Android** (aarch64 / ARM64, Android 8+).
 Ikuti langkah demi langkah **tanpa melewatkan apa pun**. Tanda `$` = perintah yang diketik di Termux.
@@ -8,7 +8,7 @@ Ikuti langkah demi langkah **tanpa melewatkan apa pun**. Tanda `$` = perintah ya
 ## Bagian 0 — Apa yang akan kamu dapat
 
 Web app downloader yang berjalan di HP kamu:
-- **19+ platform**: YouTube, TikTok, Instagram, Facebook, X (Twitter), Pinterest, Spotify, Dailymotion, SoundCloud, Archive.org, Twitch, Bandcamp, Mixcloud, Streamable, Bilibili, Vimeo, SnackVideo, RedNote, Videy
+- **26+ platform**: YouTube, TikTok, Instagram, Facebook, X (Twitter), Pinterest, Spotify, Dailymotion, SoundCloud, Archive.org, Twitch, Bandcamp, Mixcloud, Streamable, Bilibili, Vimeo, SnackVideo, RedNote, Videy, GitHub, MediaFire, Threads, Snapchat, Reddit, Douyin, Rutube
 - **Video**: pilih resolusi (default 1080p, bisa 4K)
 - **Foto & Story**: Instagram, X, Facebook (per media atau ZIP)
 - **Musik**: cari lagu/album/artis/playlist → unduh MP3 (via YouTube Music)
@@ -228,3 +228,30 @@ pip install -U yt-dlp
 Ini **aman** di Termux (hanya `pip install --upgrade pip` yang dilarang). Lakukan sebulan sekali, atau kapan pun download tiba-tiba error.
 
 Selamat mencoba! Kalau ada langkah yang error, baca bagian Troubleshooting di atas.
+
+---
+
+## 💾 Biar akun/chat/riwayat tidak hilang tiap push (Railway)
+
+Aplikasi menyimpan data di `data.db`. Kalau di-deploy ke Railway, file itu ada di
+container yang dibangun ulang tiap push → data hilang. Solusi: pakai **Volume**:
+
+1. Dashboard Railway → service → tab **Volumes** → **New Volume**.
+2. Mount path: `/data`.
+3. Tambah **Variables** → `DATA_DIR` = `/data`.
+4. Deploy ulang sekali. Setelah itu akun, chat, riwayat, playlist tersimpan permanen.
+
+Kode otomatis memakai `DATA_DIR` kalau di-set; kalau tidak, pakai `data.db` biasa.
+
+
+---
+
+## 🌐 Cara ganti nama domain (Railway)
+
+1. Beli domain (IDCloudHost / Niagahoster / Cloudflare / lainnya).
+2. Railway → service → **Settings** → **Networking** → **Domains** → **Custom Domain**.
+3. Masukkan domain → Railway kasih **target CNAME**.
+4. Di panel DNS registrar: tambah **CNAME** `@`/`www` → target itu (atau **A** `@` → `76.76.21.21`).
+5. Tunggu 5–30 menit → HTTPS otomatis oleh Railway.
+
+Ganti domain tidak menghapus akun/data (data di volume `DATA_DIR`).

@@ -1,4 +1,4 @@
-# Universal Media Downloader
+# 👑 KINGS DOWNLOADER
 
 Web downloader **gratis & open-source** berbasis **yt-dlp** dengan antarmuka **UI Pro** — dark slate elegan, aksen gradien indigo→violet, tipografi Sora + Inter, glass effect, dan micro-interactions halus (desain ulang total). Logo platform memakai **gambar asli** dari internet; logo aplikasi dibuat AI. Pola arsitektur mengikuti proyek *YT Music (Spotify) Downloader*: Flask + static folder + Dockerfile untuk deploy.
 
@@ -120,3 +120,49 @@ File hasil download disimpan sementara di folder `downloads/` (otomatis dibersih
 ## Disclaimer
 
 Alat ini hanya mengambil konten **publik**. Pengguna bertanggung jawab penuh atas apa yang diunduh dan bagaimana menggunakannya. Hormati hak cipta dan ketentuan layanan platform.
+
+## 💾 Akun & data tidak hilang saat push (Railway/Render)
+
+Railway membangun ulang app dari repo tiap push → file `data.db` di dalam container
+**ikut terhapus** (akun, chat, riwayat, playlist). Solusinya: simpan database di
+**Volume persisten** Railway.
+
+1. Buka dashboard Railway → service `nna-production` → tab **Volumes**.
+2. Klik **New Volume** → mount path: `/data` (bisa juga `/app/data`).
+3. Tambah **Environment Variable**: `DATA_DIR` = `/data`.
+4. Deploy ulang (atau cukup otomatis setelah diset) — mulai sekarang akun,
+   chat, riwayat download, riwayat baca manga, dan playlist **tersimpan permanen**
+   di volume, tidak hilang lagi saat push berikutnya.
+
+Tanpa volume: data tetap jalan tapi reset tiap deploy. Kode sudah membaca env
+`DATA_DIR` — kalau tidak di-set, fallback ke `data.db` di folder proyek.
+
+## 🌐 Cara ganti nama domain (Railway)
+
+Domain default: `https://nna-production.up.railway.app`. Mau pakai domain sendiri
+(mis. `kingsdownloader.my.id`)? Ikuti ini:
+
+1. **Beli domain** dulu (IDCloudHost, Niagahoster, Cloudflare, atau registrar lain).
+2. Buka dashboard **Railway** → service → tab **Settings** → **Networking**.
+3. Di bagian **Domains** → klik **Generate Domain** (biarkan) atau langsung
+   **Custom Domain** → masukkan domain kamu → **Add**.
+   Railway akan menampilkan **CNAME target** (mis. `xyz.up.railway.app`).
+4. Buka panel DNS registrar kamu → tambahkan record:
+   - **CNAME** `@` (atau `www`) → target CNAME dari Railway, atau
+   - **A record** `@` → IP `76.76.21.21` (Railway mengarahkan ke sini).
+   - Kalau pakai **www**, tambahkan CNAME `www` → target yang sama.
+5. Tunggu 5–30 menit sampai DNS menyebar, lalu buka domain kamu — Railway
+   mengurus sertifikat **HTTPS** otomatis (Let's Encrypt), tidak perlu konfigurasi
+   SSL manual.
+6. (Opsional) Aktifkan **Force HTTPS** di Railway supaya semua pengunjung
+   diarahkan ke versi aman.
+
+> Catatan: ganti domain **tidak** menghapus data/akun — data tersimpan di volume
+> (`DATA_DIR`), bukan di domain.
+
+## Platform (26+)
+
+YouTube, TikTok, Instagram, Facebook, X (Twitter), Pinterest, Spotify, Dailymotion,
+SoundCloud, Archive.org, Twitch, Bandcamp, Mixcloud, Streamable, Bilibili, Vimeo,
+SnackVideo, RedNote, Videy, **GitHub, MediaFire, Threads, Snapchat, Reddit,
+Douyin, Rutube**.

@@ -1,8 +1,8 @@
-/* Universal Media Downloader — frontend logic */
+/* KINGS DOWNLOADER — frontend logic */
 
 // Nomor versi UI (build). NAIKKAN 1 tiap rombak frontend — tampil di footer
 // supaya bisa dicek tanpa buka inspect element. Kunci dari "cara ngecek bump".
-const UI_VERSION = 37;
+const UI_VERSION = 39;
 
 const $ = (s) => document.querySelector(s);
 
@@ -43,8 +43,15 @@ async function fetchJSON(url, opts) {
     // menggantung selamanya (kartu progress "Antre" yang nyangkut).
     const ctl = new AbortController();
     const tm = setTimeout(() => ctl.abort(), 100000);
+    // Otomatis bawa token login (X-Auth-Token) untuk endpoint yang butuh akun
+    // (playlist, riwayat manga, chat, dll) — selama header belum di-set manual.
+    const merged = Object.assign({}, opts || {});
+    const hasAuth = (merged.headers || {})['X-Auth-Token'];
+    if (_authToken && !hasAuth) {
+        merged.headers = Object.assign({}, merged.headers || {}, { 'X-Auth-Token': _authToken });
+    }
     try {
-        const r = await fetch(url, { ...(opts || {}), signal: ctl.signal });
+        const r = await fetch(url, { ...merged, signal: ctl.signal });
         let j = {};
         try { j = await r.json(); } catch (e) { /* ignore */ }
         if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
@@ -122,6 +129,14 @@ function showView(name) {
         stopBusy();
         sb.classList.add('hidden');
         sb.innerHTML = '';
+    }
+    if (name === 'manga') {
+        // Saat masuk tab Manga dari level daftar (home/search), refresh —
+        // supaya "Lanjut Baca" selalu terbaru. Kalau lagi baca/detail, biarkan.
+        if (_mangaView === 'home' || _mangaView === 'search') {
+            const q = document.getElementById('manga-q').value.trim();
+            if (q) mangaSearch(); else mangaRecommend();
+        }
     }
     if (name === 'music') {
         //  - kartu progress musik yang sudah tidak di-poll (nyangkut) → buang
@@ -239,6 +254,10 @@ const PLATFORM_HOME = {
     streamable: 'https://streamable.com/', bilibili: 'https://www.bilibili.com/',
     vimeo: 'https://vimeo.com/', snackvideo: 'https://www.snackvideo.com/',
     rednote: 'https://www.xiaohongshu.com/explore', videy: 'https://videy.co/',
+    github: 'https://github.com/', mediafire: 'https://www.mediafire.com/',
+    threads: 'https://www.threads.net/', snapchat: 'https://www.snapchat.com/',
+    reddit: 'https://www.reddit.com/', douyin: 'https://www.douyin.com/',
+    rutube: 'https://rutube.ru/',
 };
 
 /* Warna brand per platform (untuk tile berwarna di grid) */
@@ -251,6 +270,9 @@ const PLATFORM_BRAND = {
     streamable: '#0f90fa', bilibili: '#00a1d6',
     vimeo: '#1ab7ea', snackvideo: '#ffb800',
     rednote: '#ff2442', videy: '#2f2f2f',
+    github: '#181717', mediafire: '#1e90ff', threads: '#000000',
+    snapchat: '#fffc00', reddit: '#ff4500', douyin: '#000000',
+    rutube: '#e62e1d',
 };
 
 /* ---------- Init ---------- */
@@ -878,7 +900,8 @@ function renderSongs(songs) {
             <span class="t-actions" onclick="event.stopPropagation()">
                 <button class="btn mini" onclick="musicPlay(${i})" title="Putar">${IC.play} Putar</button>
                 <button class="btn mini" onclick="musicDownload('${esc(s.videoId)}', ${i}, 'mp3')" title="Unduh MP3">${IC.download} MP3</button>
-                <button class="btn mini primary" onclick="musicDownload('${esc(s.videoId)}', ${i}, 'm4a')" title="Unduh M4A">${IC.download} M4A</button>
+                <button class="btn mini" onclick="musicDownload('${esc(s.videoId)}', ${i}, 'm4a')" title="Unduh M4A">${IC.download} M4A</button>
+                <button class="btn mini ghost" onclick="openPlaylistPicker(${i}, event)" title="Simpan ke playlist">＋</button>
             </span>
         </div>`).join('')}
     </div>`;
@@ -1279,9 +1302,204 @@ function musicBack() {
 }
 
 /* ============================================================
+   PLAYLIST — playlist musik per akun (Spotify-like)
+   ============================================================ */
+function songFromIndex(i) {
+    return (window._musicSongs && window._musicSongs[i]) || null;
+}
+
+function openPlaylistPicker(i, ev) {
+    ev = ev || window.event;
+    if (ev) ev.stopPropagation();
+    const s = songFromIndex(i);
+    if (!s) return;
+    // popover daftar playlist
+    const old = document.getElementById('pl-picker');
+    if (old) old.remove();
+    const div = document.createElement('div');
+    div.id = 'pl-picker';
+    div.className = 'pl-picker';
+    fetchJSON('/api/playlists').then(d => {
+        const pls = d.playlists || [];
+        div.innerHTML = `<div class="pl-picker-head">
+                <b>Simpan ke playlist</b>
+                <span class="pl-picker-song no-translate">${esc(s.title)}</span>
+                <button class="pbtn q-x" onclick="document.getElementById('pl-picker').remove()">✕</button>
+            </div>
+            <div class="pl-picker-list">
+                ${pls.length ? pls.map(p =>
+                    `<button class="pl-opt" onclick="addToPlaylist(${p.id}, ${i}, this)">${esc(p.name)} <span class="pl-cnt">${p.cnt || 0}</span></button>`).join('')
+                    : '<div class="pl-empty">Belum ada playlist — buat yang pertama di bawah!</div>'}
+            </div>
+            <div class="pl-picker-new">
+                <input id="pl-new-name" placeholder="Nama playlist baru…" maxlength="60">
+                <button class="btn primary mini" onclick="createAndAdd(${i})">Buat</button>
+            </div>`;
+    }).catch(e => {
+        div.innerHTML = `<div class="pl-picker-head"><b>${esc(e.message)}</b>
+            <button class="pbtn q-x" onclick="document.getElementById('pl-picker').remove()">✕</button></div>`;
+    });
+    document.body.appendChild(div);
+    const r = (ev && ev.target && ev.target.getBoundingClientRect()) || { bottom: 80, right: 20 };
+    div.style.position = 'fixed';
+    div.style.right = '16px';
+    div.style.bottom = '110px';
+    div.style.zIndex = '95';
+    div.style.width = 'min(320px, calc(100vw - 32px))';
+}
+
+async function createAndAdd(i) {
+    const name = (document.getElementById('pl-new-name').value || '').trim();
+    const s = songFromIndex(i);
+    if (!name) { toast('Tulis nama playlist dulu', true); return; }
+    if (!s) return;
+    try {
+        const d = await fetchJSON('/api/playlists', {
+            method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ name }),
+        });
+        await addToPlaylist(d.id, i, null);
+    } catch (e) {
+        toast(e.message, true);
+    }
+}
+
+async function addToPlaylist(pid, i, btn) {
+    const s = songFromIndex(i);
+    if (!s) return;
+    try {
+        await fetchJSON('/api/playlists/' + pid + '/items', {
+            method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+                video_id: s.videoId, title: s.title, artist: s.artist, thumbnail: s.thumbnail,
+            }),
+        });
+        toast('Ditambahkan ke playlist 🎵');
+        const pk = document.getElementById('pl-picker');
+        if (pk) pk.remove();
+    } catch (e) {
+        toast(e.message, true);
+    }
+}
+
+async function showMyPlaylists() {
+    const box = $('#music-results');
+    if (!_authToken) { toast('Login dulu untuk pakai playlist.', true); return; }
+    showBusy(box, 'Memuat playlist…');
+    try {
+        const d = await fetchJSON('/api/playlists');
+        stopBusy();
+        const pls = d.playlists || [];
+        box.innerHTML = `<div class="rec-head">
+            <span class="rec-badge">🎵 Playlist Saya</span>
+            <span class="rec-sub">${pls.length} playlist</span>
+        </div>
+        <div class="pl-create-row">
+            <input id="pl-create-name" placeholder="Nama playlist baru…" maxlength="60">
+            <button class="btn primary" onclick="createPlaylistFromRow()">Buat Playlist</button>
+            <button class="btn ghost" onclick="musicBack()">Kembali</button>
+        </div>
+        ${pls.length
+            ? `<div class="pl-grid">${pls.map(p => `
+                <div class="pl-card" onclick="openPlaylist(${p.id})">
+                    <div class="pl-card-ic">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M9 18V5l12-2v13M9 18a3 3 0 11-6 0 3 3 0 016 0zm12-2a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    </div>
+                    <span class="pl-card-name no-translate">${esc(p.name)}</span>
+                    <span class="pl-card-sub">${p.cnt || 0} lagu</span>
+                </div>`).join('')}</div>`
+            : '<div class="music-empty"><p>Belum ada playlist. Buat yang pertama!</p></div>'}`;
+    } catch (e) {
+        stopBusy();
+        box.innerHTML = `<div class="state-error"><b>Gagal memuat playlist</b><p>${esc(e.message)}</p></div>`;
+    }
+}
+
+async function createPlaylistFromRow() {
+    const name = (document.getElementById('pl-create-name').value || '').trim();
+    if (!name) { toast('Tulis nama playlist dulu', true); return; }
+    try {
+        await fetchJSON('/api/playlists', {
+            method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ name }),
+        });
+        toast('Playlist dibuat 🎵');
+        showMyPlaylists();
+    } catch (e) {
+        toast(e.message, true);
+    }
+}
+
+async function openPlaylist(pid) {
+    const box = $('#music-results');
+    showBusy(box, 'Memuat playlist…');
+    try {
+        const d = await fetchJSON('/api/playlists/' + pid);
+        stopBusy();
+        const pl = d.playlist || {};
+        const items = d.items || [];
+        box.innerHTML = `<div class="rec-head">
+            <span class="rec-badge no-translate">🎵 ${esc(pl.name)}</span>
+            <span class="rec-sub">${items.length} lagu</span>
+        </div>
+        <div class="actions" style="margin-bottom:12px">
+            ${items.length ? `<button class="btn primary" onclick="playPlaylistItems()">${IC.play} Putar semua</button>` : ''}
+            <button class="btn ghost" onclick="showMyPlaylists()">Kembali</button>
+        </div>
+        ${items.length
+            ? `<div class="track-table">${items.map((it, i) => `
+                <div class="track-row" onclick="playPlaylistAt(${i})">
+                    <span class="t-idx">${i + 1}</span>
+                    <span class="t-idx-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+                    <span class="t-main">
+                        <img src="${esc(it.thumbnail || '')}" onerror="this.style.visibility='hidden'" alt="">
+                        <span class="t-info">
+                            <span class="t-title no-translate">${esc(it.title)}</span>
+                            <span class="t-artist no-translate">${esc(it.artist || '')}</span>
+                        </span>
+                    </span>
+                    <span class="t-actions" onclick="event.stopPropagation()">
+                        <button class="btn mini" onclick="playPlaylistAt(${i})">${IC.play} Putar</button>
+                        <button class="btn mini danger-ghost" onclick="removePlaylistItem(${pid}, ${it.id}, ${i})">Hapus</button>
+                    </span>
+                </div>`).join('')}</div>`
+            : '<div class="music-empty"><p>Playlist kosong.</p></div>'}`;
+        window._playlistItems = items;
+    } catch (e) {
+        stopBusy();
+        box.innerHTML = `<div class="state-error"><b>Gagal memuat playlist</b><p>${esc(e.message)}</p></div>`;
+    }
+}
+
+function playPlaylistAt(i) {
+    const items = window._playlistItems || [];
+    const s = items[i];
+    if (!s) return;
+    const mapped = items.map(it => ({ videoId: it.video_id, title: it.title, artist: it.artist, thumbnail: it.thumbnail }));
+    playSongAt(mapped[i], mapped, i);
+}
+
+function playPlaylistItems() {
+    const items = window._playlistItems || [];
+    if (!items.length) return;
+    const mapped = items.map(it => ({ videoId: it.video_id, title: it.title, artist: it.artist, thumbnail: it.thumbnail }));
+    playSongAt(mapped[0], mapped, 0);
+}
+
+async function removePlaylistItem(pid, iid, i) {
+    try {
+        await fetchJSON('/api/playlists/' + pid + '/items/' + iid, { method: 'DELETE', headers: authHeaders() });
+        toast('Dihapus dari playlist');
+        openPlaylist(pid);
+    } catch (e) {
+        toast(e.message, true);
+    }
+}
+
+/* ============================================================
    PEMUTAR MUSIK — putar langsung (stream), tanpa download
    ============================================================ */
-let _player = { list: [], index: -1 };
+let _player = { list: [], index: -1, shuffle: false };
 
 function playSongAt(song, list, idx) {
     if (!song || !song.videoId) { toast('Lagu ini tidak bisa diputar.', true); return; }
@@ -1300,24 +1518,77 @@ function playSongAt(song, list, idx) {
     const audio = $('#player-audio');
     audio._errShown = false;
     audio._errMsg = '';
-    // Tampilkan "menyiapkan" selama server masih cari audio-nya
     setPlayerUI('loading');
+    $('#player-msg').classList.add('hidden');
     audio.src = '/api/music-stream/' + encodeURIComponent(song.videoId);
     audio.load();
 
-    // Watchdog: kalau 20 detik belum mulai berbunyi (mis. server lambat /
-    // video diblokir), kasih pesan jelas — jangan diam tanpa feedback.
+    // Watchdog: kalau 25 detik belum mulai berbunyi, kasih pesan jelas.
     clearTimeout(audio._watchdog);
     audio._watchdog = setTimeout(() => {
         if (!audio.paused || audio.readyState > 0) return;
         if (audio._errShown) return;
         audio._errShown = true;
         setPlayerUI('paused');
-        toast('Lagu ini butuh waktu lama untuk mulai. Coba unduh MP3-nya saja ya!', true);
-    }, 20000);
+        playerShowMsg('Lagu ini butuh waktu lama untuk mulai — coba lagu lain atau unduh MP3-nya.');
+    }, 25000);
 
     const p = audio.play();
     if (p && p.catch) p.catch(() => { /* error ditangani via event error */ });
+}
+
+function playerShowMsg(text) {
+    const el = $('#player-msg');
+    if (!el) return;
+    el.textContent = text;
+    el.classList.remove('hidden');
+}
+
+function playerNext(skipAuto) {
+    const list = _player.list;
+    if (!list || !list.length) return;
+    const n = list.length;
+    let i = _player.index + 1;
+    if (i >= n) i = 0;
+    if (n === 1) { playerToggle(); return; }
+    const s = list[i];
+    if (s && s.videoId) playSongAt(s, list, i);
+}
+
+function playerPrev() {
+    const list = _player.list;
+    if (!list || !list.length) return;
+    const audio = $('#player-audio');
+    // kalau baru mulai (>3 detik) → kembali ke awal lagu; kalau sudah lama → lagu sebelumnya
+    if (audio.currentTime > 3) {
+        audio.currentTime = 0;
+        return;
+    }
+    const n = list.length;
+    const i = (_player.index - 1 + n) % n;
+    const s = list[i];
+    if (s && s.videoId) playSongAt(s, list, i);
+}
+
+function playerSeekInput(el) {
+    const audio = $('#player-audio');
+    if (!audio || !audio.duration || !isFinite(audio.duration)) return;
+    audio.currentTime = (el.value / 1000) * audio.duration;
+}
+
+function playerClose() {
+    const audio = $('#player-audio');
+    clearTimeout(audio._watchdog);
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+    setPlayerUI('paused');
+    $('#player-bar').classList.add('hidden');
+    document.body.classList.remove('has-player');
+    playerToggleLyrics(false);
+    playerToggleQueue(false);
+    _player.list = [];
+    _player.index = -1;
 }
 
 function setPlayerUI(state) {
@@ -1327,7 +1598,6 @@ function setPlayerUI(state) {
     b.classList.toggle('loading', state === 'loading');
     b.disabled = state === 'loading';
     b.classList.toggle('playing', state === 'playing');
-    // equalizer beranimasi saat lagu sedang diputar
     const eq = $('#player-eq');
     if (eq) eq.classList.toggle('playing', state === 'playing');
     if (state === 'loading') {
@@ -1346,59 +1616,155 @@ function playerToggle() {
     else audio.pause();
 }
 
-function playerNext() {
+/* ————— LIRIK ————— */
+let _lyrics = null;       // [{t: detik, l: baris}] untuk lirik sinkron
+let _lyricsTimer = null;
+
+function playerToggleLyrics(force) {
+    const panel = $('#lyrics-panel');
+    if (!panel) return;
+    const want = (force === undefined) ? panel.classList.contains('hidden') : !!force;
+    if (want) {
+        panel.classList.remove('hidden');
+        playerToggleQueue(false);
+        loadLyrics();
+    } else {
+        panel.classList.add('hidden');
+    }
+}
+
+async function loadLyrics() {
+    const title = $('#player-title').textContent;
+    const artist = $('#player-artist').textContent;
+    const body = $('#lyrics-body');
+    body.innerHTML = '<div class="music-empty">Memuat lirik…</div>';
+    _lyrics = null;
+    clearInterval(_lyricsTimer);
+    try {
+        const d = await fetchJSON('/api/music-lyrics?title=' + encodeURIComponent(title) +
+                                  '&artist=' + encodeURIComponent(artist));
+        if (!d.found || !d.lyrics) {
+            body.innerHTML = '<div class="music-empty"><p>Lirik tidak ditemukan untuk lagu ini.</p></div>';
+            return;
+        }
+        if (d.synced) {
+            _lyrics = parseSyncedLyrics(d.lyrics);
+        }
+        renderLyrics(d.lyrics, d.synced);
+    } catch (e) {
+        body.innerHTML = '<div class="music-empty"><p>Gagal memuat lirik.</p></div>';
+    }
+}
+
+function parseSyncedLyrics(text) {
+    // format LRC: [mm:ss.xx] baris
+    const out = [];
+    for (const line of (text || '').split('\n')) {
+        const m = line.match(/\[(\d+):(\d+(?:\.\d+)?)\](.*)/);
+        if (m) {
+            const t = parseInt(m[1], 10) * 60 + parseFloat(m[2]);
+            out.push({ t: t, l: (m[3] || '').trim() });
+        }
+    }
+    return out.sort((a, b) => a.t - b.t);
+}
+
+function renderLyrics(text, synced) {
+    const body = $('#lyrics-body');
+    if (!synced || !_lyrics || !_lyrics.length) {
+        const lines = (text || '').split('\n').map(l => l.trim()).filter(Boolean);
+        body.innerHTML = '<div class="lyrics-plain">' +
+            lines.map(l => `<div class="ly-line">${esc(l)}</div>`).join('') + '</div>';
+        return;
+    }
+    body.innerHTML = '<div class="lyrics-synced">' +
+        _lyrics.map((x, i) => `<div class="ly-line" data-i="${i}">${esc(x.l || '♪')}</div>`).join('') +
+        '</div>';
+    clearInterval(_lyricsTimer);
+    _lyricsTimer = setInterval(() => {
+        const audio = $('#player-audio');
+        const t = audio.currentTime || 0;
+        let idx = -1;
+        for (let i = _lyrics.length - 1; i >= 0; i--) {
+            if (_lyrics[i].t <= t + 0.3) { idx = i; break; }
+        }
+        const lines = body.querySelectorAll('.ly-line');
+        lines.forEach((el, i) => {
+            el.classList.toggle('active', i === idx);
+        });
+        if (idx >= 0 && lines[idx]) {
+            lines[idx].scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+    }, 400);
+}
+
+/* ————— ANTREAN ————— */
+function playerToggleQueue(force) {
+    const panel = $('#queue-panel');
+    if (!panel) return;
+    const want = (force === undefined) ? panel.classList.contains('hidden') : !!force;
+    if (want) {
+        panel.classList.remove('hidden');
+        playerToggleLyrics(false);
+        renderQueue();
+    } else {
+        panel.classList.add('hidden');
+    }
+}
+
+function renderQueue() {
+    const list = $('#queue-list');
+    const listArr = _player.list || [];
+    const cur = _player.index;
+    $('#queue-count').textContent = listArr.length + ' lagu';
+    if (!listArr.length) {
+        list.innerHTML = '<div class="music-empty">Antrean kosong — cari lagu lalu tekan Putar.</div>';
+        return;
+    }
+    const rows = [];
+    for (let i = 0; i < listArr.length; i++) {
+        const s = listArr[i];
+        if (!s) continue;
+        rows.push(`<div class="q-row ${i === cur ? 'q-now' : ''}" onclick="playSongAt(_player.list[${i}], _player.list, ${i})">
+            <img src="${esc(s.thumbnail || '')}" onerror="this.style.visibility='hidden'" alt="">
+            <div class="q-info">
+                <span class="q-title no-translate">${esc(s.title || 'Lagu')}</span>
+                <span class="q-artist no-translate">${esc(s.artist || '')}</span>
+            </div>
+            <button class="pbtn q-x" onclick="event.stopPropagation(); playerQueueRemove(${i})" title="Hapus dari antrean" aria-label="Hapus">
+                <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"/></svg>
+            </button>
+        </div>`);
+    }
+    list.innerHTML = rows.join('');
+}
+
+function playerQueueRemove(i) {
     const list = _player.list;
-    if (!list || !list.length) return;
-    const i = (_player.index + 1) % list.length;
-    const s = list[i];
-    if (s && s.videoId) playSongAt(s, list, i);
+    if (!list) return;
+    const removed = list.splice(i, 1)[0];
+    if (i < _player.index) _player.index -= 1;
+    renderQueue();
 }
-
-function playerPrev() {
-    const list = _player.list;
-    if (!list || !list.length) return;
-    const i = (_player.index - 1 + list.length) % list.length;
-    const s = list[i];
-    if (s && s.videoId) playSongAt(s, list, i);
-}
-
-function playerSeekInput(el) {
-    const audio = $('#player-audio');
-    if (!audio || !audio.duration) return;
-    audio.currentTime = (el.value / 1000) * audio.duration;
-}
-
-function playerClose() {
-    const audio = $('#player-audio');
-    clearTimeout(audio._watchdog);
-    audio.pause();
-    audio.removeAttribute('src');
-    audio.load();
-    setPlayerUI('paused');
-    $('#player-bar').classList.add('hidden');
-    document.body.classList.remove('has-player');
-    _player.list = [];
-    _player.index = -1;
-}
-
-function fmtPlayerTime(t) { return fmtDur(t); }
 
 /* ————— pemasangan event pemutar (sekali) ————— */
 (function setupPlayer() {
     const audio = $('#player-audio');
     const seek = $('#player-seek');
-    const timeEl = $('#player-time');
 
     audio.addEventListener('timeupdate', () => {
-        if (!audio.duration) return;
+        if (!audio.duration || !isFinite(audio.duration)) return;
         seek.value = Math.round((audio.currentTime / audio.duration) * 1000);
-        timeEl.textContent = fmtDur(audio.currentTime) + ' / ' + fmtDur(audio.duration);
+        $('#player-cur').textContent = fmtDur(audio.currentTime);
+        $('#player-dur').textContent = fmtDur(audio.duration);
     });
     audio.addEventListener('loadedmetadata', () => {
-        timeEl.textContent = '0:00 / ' + fmtDur(audio.duration);
+        $('#player-cur').textContent = '0:00';
+        $('#player-dur').textContent = fmtDur(audio.duration);
     });
     audio.addEventListener('playing', () => {
         clearTimeout(audio._watchdog);
+        $('#player-msg').classList.add('hidden');
         setPlayerUI('playing');
     });
     audio.addEventListener('play', () => {
@@ -1410,34 +1776,41 @@ function fmtPlayerTime(t) { return fmtDur(t); }
         if (audio.ended) return;
         setPlayerUI('paused');
     });
-    audio.addEventListener('ended', () => playerNext());
+    audio.addEventListener('ended', () => playerNext(true));
     audio.addEventListener('error', () => {
         const audio2 = $('#player-audio');
         if (audio2._errShown) return;
-        // Cek satu kali: apakah server balas pesan error (JSON) atau audio-nya
-        // memang tidak bisa diputar di perangkat ini. Timeout 15 detik biar
-        // tidak nge-gantung lama.
         audio2._errShown = true;
         clearTimeout(audio2._watchdog);
         setPlayerUI('paused');
+        playerShowMsg('Gagal memutar lagu ini dari server.');
+        // cek pesan error dari server (kalau JSON)
         const ctl = new AbortController();
-        const tm = setTimeout(() => ctl.abort(), 15000);
+        const tm = setTimeout(() => ctl.abort(), 12000);
         fetch(audio2.src, { headers: { 'Range': 'bytes=0-0' }, signal: ctl.signal })
             .then(async r => {
                 clearTimeout(tm);
                 const ct = (r.headers.get('content-type') || '').toLowerCase();
+                let msg = '';
                 if (ct.includes('json')) {
                     const j = await r.json().catch(() => null);
-                    toast((j && j.error) || 'Lagu ini tidak bisa diputar dari server. Coba unduh MP3-nya ya!', true);
-                } else if (ct.startsWith('audio/') || ct.startsWith('video/')) {
-                    toast('Format audio tidak didukung perangkat ini. Coba unduh MP3-nya ya!', true);
-                } else {
-                    toast('Lagu tidak bisa diputar. Coba unduh MP3-nya ya!', true);
+                    msg = (j && j.error) || '';
+                }
+                if (msg) playerShowMsg(msg);
+                // otomatis lewati ke lagu berikutnya (kalau ada) — tidak menggantung
+                const list = _player.list;
+                if (list && list.length > 1) {
+                    setTimeout(() => playerNext(true), 1200);
+                    toast('Lagu gagal diputar — otomatis lewati ke berikutnya.', true);
                 }
             })
             .catch(() => {
                 clearTimeout(tm);
-                toast('Lagu tidak bisa diputar. Coba unduh MP3-nya ya!', true);
+                const list = _player.list;
+                if (list && list.length > 1) {
+                    setTimeout(() => playerNext(true), 1200);
+                    toast('Lagu gagal diputar — otomatis lewati ke berikutnya.', true);
+                }
             });
     });
 })();
@@ -1649,6 +2022,8 @@ let _mangaTagName = '';
 let _mangaQ = '';
 let _mangaLang = 'en';   // bahasa chapter: original / en / id
 let _mangaMid = '';      // id manga yang sedang dibuka (untuk ganti bahasa)
+let _mangaCurrent = null; // konteks manga yang dibuka (id/title/cover) untuk riwayat
+let _mangaView = 'home'; // 'home' | 'search' | 'detail' | 'reader' — untuk refresh saat buka tab
 
 function mangaCardHtml(m) {
     const tags = (m.tags || []).map(t => `<span class="mg-chip">${esc(t)}</span>`).join('');
@@ -1663,7 +2038,32 @@ function mangaCardHtml(m) {
     </div>`;
 }
 
+async function mangaHistoryHtml() {
+    // Baris "Lanjut Baca" — riwayat baca manga per akun (dipakai di
+    // rekomendasi & hasil pencarian). Kembalikan '' kalau tidak ada.
+    if (!_authToken) return '';
+    try {
+        const hd = await fetchJSON('/api/manga/history');
+        const hist = hd.items || [];
+        if (!hist.length) return '';
+        return `<div class="rec-head" style="margin-top:4px">
+                <span class="rec-badge">📖 Lanjut Baca</span>
+                <span class="rec-sub">${hist.length} manga terakhir · klik untuk lanjut</span>
+            </div>
+            <div class="manga-grid manga-history-grid">` +
+            hist.slice(0, 8).map(h => `
+            <div class="manga-card" onclick="mangaOpen('${h.manga_id}')">
+                ${h.cover ? `<img src="/api/manga-img?url=${encodeURIComponent(h.cover)}" loading="lazy" onerror="this.style.visibility='hidden'">` : ''}
+                <div class="mc-body">
+                    <div class="mc-title">${esc(h.title)}</div>
+                    <div class="mc-sub">Chapter ${esc(h.chapter || '?')}${h.lang ? ' · ' + esc(h.lang) : ''}</div>
+                </div>
+            </div>`).join('') + `</div>`;
+    } catch (e) { return ''; }
+}
+
 async function mangaRecommend() {
+    _mangaView = 'home';
     const box = document.getElementById('manga-results');
     if (!box) return;
     showBusy(box, 'Memuat rekomendasi…');
@@ -1675,7 +2075,8 @@ async function mangaRecommend() {
             return;
         }
         const label = _mangaTag ? 'Rekomendasi ' + _mangaTagName : '🔥 Rekomendasi untukmu';
-        box.innerHTML = `<div class="rec-head">
+        const histHtml = await mangaHistoryHtml();
+        box.innerHTML = histHtml + `<div class="rec-head">
             <span class="rec-badge">${esc(label)}</span>
             <span class="rec-sub">${d.results.length} judul populer · klik untuk baca</span>
         </div><div class="manga-grid">` + d.results.map(mangaCardHtml).join('') + `</div>`;
@@ -1686,6 +2087,7 @@ async function mangaRecommend() {
 }
 
 async function mangaSearch() {
+    _mangaView = 'search';
     const q = document.getElementById('manga-q').value.trim();
     _mangaQ = q;
     const box = document.getElementById('manga-results');
@@ -1699,7 +2101,8 @@ async function mangaSearch() {
             box.innerHTML = `<div class="music-empty"><p>${q ? `Tidak ada manga untuk "${esc(q)}".` : 'Tidak ada hasil.'}</p></div>`;
             return;
         }
-        box.innerHTML = `<div class="rec-head">
+        const histHtml = await mangaHistoryHtml();
+        box.innerHTML = histHtml + `<div class="rec-head">
             <span class="rec-badge">Hasil pencarian</span>
             <span class="rec-sub">${d.results.length} judul</span>
         </div><div class="manga-grid">` + d.results.map(mangaCardHtml).join('') + `</div>`;
@@ -1732,6 +2135,7 @@ function mangaSetTag(key, name) {
 }
 
 async function mangaOpen(mid) {
+    _mangaView = 'detail';
     const box = document.getElementById('manga-results');
     _mangaMid = mid;
     showBusy(box, 'Memuat detail manga…');
@@ -1739,6 +2143,7 @@ async function mangaOpen(mid) {
         const d = await fetchJSON('/api/manga/' + mid + '?lang=' + encodeURIComponent(_mangaLang));
         stopBusy();
         if (!d.ok) throw new Error(d.error);
+        _mangaCurrent = { id: mid, title: d.title, cover: d.cover || '' };
         const origLabel = d.original_language
             ? 'Bahasa Asli (' + esc(String(d.original_language).toUpperCase()) + ')'
             : 'Bahasa Asli';
@@ -1791,12 +2196,26 @@ let _readerPages = [];
 let _readerIdx = 0;
 
 async function mangaRead(cid, chapter, lang) {
+    _mangaView = 'reader';
     const box = document.getElementById('manga-results');
     showBusy(box, 'Memuat halaman chapter…');
     try {
         const d = await fetchJSON('/api/manga/read/' + cid);
         stopBusy();
         if (!d.ok || !d.pages || !d.pages.length) throw new Error(d.error || 'Chapter kosong');
+        // catat riwayat baca (kalau login)
+        if (_authToken && _mangaCurrent) {
+            try {
+                fetchJSON('/api/manga/history', {
+                    method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({
+                        manga_id: _mangaCurrent.id, title: _mangaCurrent.title,
+                        cover: _mangaCurrent.cover, chapter: chapter || '?',
+                        chapter_id: cid, lang: lang || _mangaLang || '',
+                    }),
+                }).catch(() => {});
+            } catch (e) { /* abaikan */ }
+        }
         _readerPages = d.pages;
         _readerIdx = 0;
         box.innerHTML = `
