@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Download hasil (jangan di-commit)
+downloads/
+cookies.txt
+
+# OS
+.DS_Store
+Thumbs.db

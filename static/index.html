@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#08090d">
+    <meta name="description" content="Universal Media Downloader — unduh video, audio & musik dari YouTube, TikTok, Instagram, dan 19+ platform lainnya. Gratis & tanpa watermark.">
+    <title>Universal Media Downloader</title>
+    <link rel="icon" type="image/png" href="/static/img/logo_64.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=35">
+</head>
+<body>
+
+    <!-- ================= TOPBAR ================= -->
+    <header class="topbar">
+        <div class="brand" onclick="showView('home')" style="cursor:pointer">
+            <div class="brand-logo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            </div>
+            <div class="brand-text">
+                <span class="brand-title">Universal <span class="accent">Downloader</span></span>
+                <span class="brand-sub">Media dari platform favoritmu</span>
+            </div>
+        </div>
+        <nav class="topnav" aria-label="Navigasi utama">
+            <button class="nav-btn active" id="nav-home" data-nav="home" onclick="showView('home')">
+                <svg viewBox="0 0 24 24"><path d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10"/></svg>
+                <span>Beranda</span>
+            </button>
+            <button class="nav-btn" id="nav-music" data-nav="music" onclick="showView('music')">
+                <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13M9 18a3 3 0 11-6 0 3 3 0 016 0zm12-2a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                <span>Musik</span>
+            </button>
+            <button class="nav-btn" id="nav-manga" data-nav="manga" onclick="showView('manga')">
+                <svg viewBox="0 0 24 24"><path d="M4 4h16v14H4zM4 8h16M8 14l2-2 2 2 4-4"/></svg>
+                <span>Manga</span>
+            </button>
+            <button class="nav-btn" id="nav-news" data-nav="news" onclick="showView('news')">
+                <svg viewBox="0 0 24 24"><path d="M4 5h13v14H4zM17 8h3v9a2 2 0 01-2 2h0M6 9h7M6 12h7M6 15h5"/></svg>
+                <span>Berita</span>
+            </button>
+            <button class="nav-btn" id="nav-chat" data-nav="chat" onclick="showView('chat')">
+                <svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 01-8 8H4l2-3a8 8 0 1115-5z"/></svg>
+                <span>Chat</span>
+            </button>
+            <button class="nav-btn" id="nav-about" data-nav="about" onclick="showView('about')">
+                <svg viewBox="0 0 24 24"><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3m.08 4h.01M12 21a9 9 0 110-18 9 9 0 010 18z"/></svg>
+                <span>Cara Pakai</span>
+            </button>
+        </nav>
+        <div class="topbar-right">
+            <div class="clock" id="live-clock" title="Waktu real-time (zona waktu perangkatmu)">–:–:–</div>
+            <div class="user-chip" id="user-chip">
+                <button class="uc-btn" id="uc-login" onclick="showLogin()">
+                    <svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 100-8 4 4 0 000 8zM4 21v-1a8 8 0 0116 0v1"/></svg>
+                    <span>Masuk</span>
+                </button>
+                <div class="uc-user hidden" id="uc-user">
+                    <span class="uc-name" id="uc-name">–</span>
+                    <button class="uc-btn" onclick="doLogout()" title="Keluar">
+                        <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="content">
+
+        <!-- ================= VIEW: HOME ================= -->
+        <section id="view-home" class="view">
+            <div class="hero">
+                <p class="hero-eyebrow">Media downloader gratis &amp; open-source</p>
+                <h1 class="hero-title">Tempel tautannya,<br><span class="grad">langsung jadi file-nya.</span></h1>
+                <p class="hero-sub">Video, audio, atau musik dari YouTube, TikTok, Instagram, dan 19+ platform lainnya — diambil langsung dari sumbernya, tanpa watermark.</p>
+
+                <div class="urlbox">
+                    <span class="urlbox-ic">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+                    </span>
+                    <input type="text" id="url-input" placeholder="Tempel link video, audio, atau musik di sini…" autocomplete="off" spellcheck="false" enterkeyhint="go">
+                    <button id="search-btn" onclick="handleSearch()">
+                        Analisis URL
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                    </button>
+                </div>
+
+                <div class="plat-row">
+                    <span class="plat-label">Platform</span>
+                    <div class="dd" id="plat-dd">
+                        <button type="button" class="dd-btn" onclick="ddToggle(event)" aria-haspopup="listbox" aria-expanded="false">
+                            <span class="dd-value" id="plat-value">
+                                <span class="dd-auto-ic"><svg viewBox="0 0 24 24" class="ic"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4"/></svg></span>
+                                <span>Otomatis</span>
+                            </span>
+                            <svg class="dd-arrow" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+                        </button>
+                        <div class="dd-menu hidden" id="plat-menu" role="listbox">
+                            <button type="button" class="dd-opt" data-v="" onclick="ddPick('')" role="option">
+                                <span class="dd-opt-ic auto"><svg viewBox="0 0 24 24" class="ic"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4"/></svg></span>
+                                <span class="dd-opt-t">Otomatis</span>
+                                <span class="dd-opt-d">Deteksi dari URL</span>
+                            </button>
+                            <!-- diisi JS -->
+                        </div>
+                    </div>
+                    <span class="plat-hint" id="platform-hint">Pilih manual hanya kalau perlu — otomatis sudah jalan sendiri.</span>
+                </div>
+
+                <div class="quick-chips" id="quick-chips">
+                    <span class="qc-label">Coba cepat:</span>
+                    <!-- diisi JS: semua platform -->
+                </div>
+            </div>
+
+            <!-- Stats strip -->
+            <div class="stats-strip">
+                <div class="stat">
+                    <span class="stat-num">19+</span>
+                    <span class="stat-label">Platform</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-num">100%</span>
+                    <span class="stat-label">Gratis</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-num">0</span>
+                    <span class="stat-label">Watermark</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-num">∞</span>
+                    <span class="stat-label">Tanpa batas</span>
+                </div>
+            </div>
+
+            <!-- Platform grid -->
+            <div class="sec-head">
+                <h2 class="section-title">Platform didukung</h2>
+                <span class="sec-count" id="platform-count">—</span>
+            </div>
+            <div class="platform-grid" id="platform-grid"><!-- diisi JS --></div>
+
+            <!-- Hasil analisis -->
+            <div id="info-card" class="info-card hidden"></div>
+            <div id="progress-card" class="progress-card hidden"></div>
+            <div id="state-box" class="state-box hidden"></div>
+        </section>
+
+        <!-- ================= VIEW: MUSIK ================= -->
+        <section id="view-music" class="view hidden">
+            <div class="music-hero">
+                <span class="music-hero-badge">
+                    <svg viewBox="0 0 24 24" class="ic"><path d="M9 18V5l12-2v13M9 18a3 3 0 11-6 0 3 3 0 016 0zm12-2a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    Musik — cari lagu, putar, &amp; unduh MP3
+                </span>
+                <div class="urlbox">
+                    <span class="urlbox-ic">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M21 21l-4.35-4.35M17 10a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                    </span>
+                    <input type="text" id="music-q" placeholder="Cari judul lagu, artis, atau album…" autocomplete="off" spellcheck="false" enterkeyhint="search">
+                    <button id="music-search-btn" onclick="musicSearch()">Cari</button>
+                </div>
+                <div class="filter-pills" id="music-filters">
+                    <button class="pill active" data-f="songs" onclick="musicSetFilter('songs')">Lagu</button>
+                    <button class="pill" data-f="albums" onclick="musicSetFilter('albums')">Album</button>
+                    <button class="pill" data-f="artists" onclick="musicSetFilter('artists')">Artis</button>
+                    <button class="pill" data-f="playlists" onclick="musicSetFilter('playlists')">Playlist</button>
+                </div>
+            </div>
+            <div id="music-results" class="music-results"></div>
+        </section>
+
+        <!-- ================= VIEW: MANGA ================= -->
+        <section id="view-manga" class="view hidden">
+            <div class="music-hero">
+                <span class="music-hero-badge">
+                    <svg viewBox="0 0 24 24" class="ic"><path d="M4 4h16v14H4zM4 8h16M8 14l2-2 2 2 4-4"/></svg>
+                    Manga — baca online via MangaDex
+                </span>
+                <div class="urlbox">
+                    <span class="urlbox-ic"><svg viewBox="0 0 24 24" class="ic"><path d="M21 21l-4.35-4.35M17 10a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></span>
+                    <input type="text" id="manga-q" placeholder="Cari judul manga… (mis. One Piece, Naruto)" autocomplete="off" spellcheck="false" enterkeyhint="search">
+                    <button id="manga-search-btn" onclick="mangaSearch()">Cari</button>
+                </div>
+                <div class="filter-pills" id="manga-genres">
+                    <!-- diisi JS: filter kategori genre -->
+                </div>
+            </div>
+            <div id="manga-results" class="music-results"></div>
+        </section>
+
+        <!-- ================= VIEW: BERITA ================= -->
+        <section id="view-news" class="view hidden">
+            <div class="music-hero">
+                <span class="music-hero-badge">
+                    <svg viewBox="0 0 24 24" class="ic"><path d="M4 5h13v14H4zM17 8h3v9a2 2 0 01-2 2h0M6 9h7M6 12h7M6 15h5"/></svg>
+                    Berita — live dari banyak sumber
+                </span>
+                <div class="urlbox">
+                    <span class="urlbox-ic"><svg viewBox="0 0 24 24" class="ic"><path d="M21 21l-4.35-4.35M17 10a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></span>
+                    <input type="text" id="news-q" placeholder="Cari berita… (judul / isi)" autocomplete="off" spellcheck="false" enterkeyhint="search">
+                    <button id="news-refresh-btn" onclick="newsRefresh()">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M21 12a9 9 0 11-2.64-6.36M21 3v6h-6"/></svg>
+                        Segarkan
+                    </button>
+                </div>
+                <div class="filter-pills" id="news-cats">
+                    <!-- diisi JS: kategori -->
+                </div>
+                <div class="filter-pills" id="news-srcs" style="margin-top:8px">
+                    <!-- diisi JS: sumber -->
+                </div>
+                <p class="news-live" id="news-live">—</p>
+            </div>
+            <div id="news-results" class="music-results"></div>
+        </section>
+
+        <!-- ================= VIEW: CHAT ================= -->
+        <section id="view-chat" class="view hidden">
+            <div class="music-hero">
+                <span class="music-hero-badge">
+                    <svg viewBox="0 0 24 24" class="ic"><path d="M21 12a8 8 0 01-8 8H4l2-3a8 8 0 1115-5z"/></svg>
+                    Chat global — semua pengguna
+                </span>
+                <p class="muted" style="font-size:12.5px">Ngobrol dengan pengguna lain di server. Hormati satu sama lain ya!</p>
+            </div>
+            <div class="chat-box">
+                <div class="chat-list" id="chat-list"></div>
+                <div class="chat-input-row">
+                    <input type="text" id="chat-input" placeholder="Tulis pesan…" autocomplete="off" enterkeyhint="send" maxlength="500">
+                    <button id="chat-send" class="btn primary" onclick="chatSend()">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                        Kirim
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= VIEW: ABOUT ================= -->
+        <section id="view-about" class="view hidden">
+            <div class="about-head">
+                <span class="hero-eyebrow">Panduan</span>
+                <h1 class="hero-title">Cara <span class="grad">Pakai</span></h1>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-head">
+                    <span class="card-ic grad-ic">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>
+                    </span>
+                    <h3 class="card-title">Saran platform baru</h3>
+                </div>
+                <p class="muted">Mau platform yang belum ada? Usulkan di sini — request masuk ke kotak saran global semua pengguna.</p>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+                    <input type="text" id="plat-req-input" placeholder="Nama platform (mis. VK, Telegram, 9GAG…)" style="flex:1;min-width:180px;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;padding:10px 13px;color:var(--text);outline:none">
+                    <button class="btn primary" onclick="submitPlatformRequest()">Usulkan</button>
+                </div>
+                <div class="plat-req-list" id="plat-req-list" style="margin-top:12px"></div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-head">
+                    <span class="card-ic">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M12 8v4l3 3M12 21a9 9 0 110-18 9 9 0 010 18z"/></svg>
+                    </span>
+                    <h3 class="card-title">Riwayat download (akunmu)</h3>
+                </div>
+                <div id="history-box" class="muted">Login untuk melihat riwayat download-mu.</div>
+            </div>
+
+
+            <div class="card mb-3">
+                <div class="card-head">
+                    <span class="card-ic grad-ic">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>
+                    </span>
+                    <h3 class="card-title">Langkah cepat</h3>
+                </div>
+                <ol class="steps">
+                    <li>Tempel tautan dari platform mana pun ke kolom di Beranda.</li>
+                    <li>Klik <b>Analisis URL</b> — aplikasi membaca metadata &amp; daftar format.</li>
+                    <li>Pilih mode: video terbaik, MP3, audio asli, video saja, atau format mentah.</li>
+                    <li>Klik tombol unduh, tunggu progress bar, lalu <b>Simpan file</b>.</li>
+                </ol>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-head">
+                    <span class="card-ic">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                    </span>
+                    <h3 class="card-title">Mode download</h3>
+                </div>
+                <ul class="steps">
+                    <li><b>Video terbaik</b> — video + audio digabung sesuai resolusi pilihan (default 1080p), MP4 bila memungkinkan (otomatis fallback MKV untuk codec VP9/Opus).</li>
+                    <li><b>Audio MP3</b> — ekstraksi 192 kbps.</li>
+                    <li><b>Format mentah</b> — pilih persis dari daftar format yang tersedia.</li>
+                    <li><b>Foto / Story</b> — Instagram, X, dan Facebook: tempel tautan foto/story, unduh per media atau sekaligus sebagai ZIP.</li>
+                </ul>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-head">
+                    <span class="card-ic">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M12 8v4l3 3M12 21a9 9 0 110-18 9 9 0 010 18z"/></svg>
+                    </span>
+                    <h3 class="card-title">Catatan platform</h3>
+                </div>
+                <ul class="steps">
+                    <li><b>Musik</b> — buka menu <b>Musik</b>, cari judul lagu/artis/album, lalu <b>Putar</b> langsung atau <b>unduh MP3</b> (per lagu / semua sekaligus). Audio dari YouTube Music, tanpa perlu login.</li>
+                    <li><b>Spotify</b> — hanya tautan per-lagu (track). Audio diambil dari YouTube Music (Spotify ber-DRM, file aslinya tidak bisa diunduh).</li>
+                    <li><b>Dailymotion / Archive.org / Twitch</b> — video: tempel tautan videonya. Twitch: clip publik jalan; video siaran yang butuh login tidak.</li>
+                    <li><b>SoundCloud / Mixcloud / Bandcamp</b> — audio: tempel tautan lagu/show-nya, pilih <b>MP3</b>. Mix yang panjang (1 jam+) butuh waktu beberapa menit, wajar.</li>
+                    <li><b>Streamable</b> — tempel tautan videonya (`streamable.com/...`) — video &amp; MP3, cepat.</li>
+                    <li><b>RedNote (Xiaohongshu)</b> — tempel tautan post (`xiaohongshu.com/explore/…` atau link share `xhslink.com/…`) — foto &amp; video. Kalau server sedang diblokir RedNote, tempel link share post-nya (dari tombol Bagikan) karena biasanya lebih berhasil.</li>
+                    <li><b>Bilibili</b> — dua versi: <b>bilibili.com</b> (format <b>BV…</b>/<b>av…</b>, tautan pendek <b>b23.tv</b>) dan <b>bilibili.tv</b> (versi internasional, tautan <b>video/…</b>). Keduanya pakai API tanpa login.</li>
+                    <li><b>Story Instagram/Facebook</b> — hanya story publik yang masih aktif; story yang sudah kedaluwarsa tidak bisa diunduh.</li>
+                    <li><b>Instagram, X, Facebook</b> — foto &amp; video: tempel tautan postingannya; aplikasi otomatis memilih metode (video / foto / carousel).</li>
+                    <li><b>TikTok foto geser (slideshow)</b> — tempel tautan video/photo TikTok; aplikasi menampilkan semua fotonya, centang foto yang mau diunduh (atau pilih semua) lalu unduh sebagai ZIP.</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <span class="card-ic">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    </span>
+                    <h3 class="card-title">Catatan legal</h3>
+                </div>
+                <p class="muted">Alat ini hanya mengambil konten publik. Pengguna bertanggung jawab penuh atas apa yang diunduh dan bagaimana menggunakannya — hormati hak cipta dan ketentuan layanan platform.</p>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <span>Universal Media Downloader — gratis untuk semua.</span>
+        <span class="muted">Tanpa watermark · Hormati hak cipta.</span>
+        <span class="ui-ver" title="Versi UI">Versi UI v<b id="ui-version">–</b></span>
+    </footer>
+
+    <!-- ================= PEMUTAR MUSIK ================= -->
+    <div id="player-bar" class="player-bar hidden">
+        <img id="player-thumb" class="player-thumb" alt="" src="">
+        <div class="player-meta">
+            <span id="player-title" class="no-translate">–</span>
+            <span id="player-artist" class="no-translate player-artist">–</span>
+        </div>
+        <div class="player-eq" id="player-eq" aria-hidden="true">
+            <span></span><span></span><span></span><span></span>
+        </div>
+        <div class="player-controls">
+            <button class="pbtn" id="player-prev" onclick="playerPrev()" title="Lagu sebelumnya" aria-label="Lagu sebelumnya">
+                <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zM20 6l-10 6 10 6z"/></svg>
+            </button>
+            <button class="pbtn pbtn-main" id="player-play" onclick="playerToggle()" title="Putar / Jeda" aria-label="Putar / Jeda">
+                <svg viewBox="0 0 24 24" id="player-play-ic"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <button class="pbtn" id="player-next" onclick="playerNext()" title="Lagu berikutnya" aria-label="Lagu berikutnya">
+                <svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM4 6l10 6-10 6z"/></svg>
+            </button>
+        </div>
+        <input type="range" id="player-seek" min="0" max="1000" value="0" oninput="playerSeekInput(this)" aria-label="Posisi lagu">
+        <span id="player-time" class="player-time">0:00 / 0:00</span>
+        <button class="pbtn pbtn-x" onclick="playerClose()" title="Tutup pemutar" aria-label="Tutup pemutar">
+            <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"/></svg>
+        </button>
+        <audio id="player-audio" preload="none"></audio>
+    </div>
+
+    <!-- ================= LOGIN ================= -->
+    <div id="login-overlay" class="login-overlay hidden">
+        <div class="login-card">
+            <div class="login-brand">
+                <div class="brand-logo">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                </div>
+                <h2>Masuk ke <span class="grad">Universal Downloader</span></h2>
+                <p class="muted">Buat akun gratis atau lanjut sebagai tamu. Riwayat download &amp; chat tersimpan di akunmu.</p>
+            </div>
+            <div class="login-tabs">
+                <button class="pill active" id="lt-login" onclick="loginTab('login')">Masuk</button>
+                <button class="pill" id="lt-signup" onclick="loginTab('signup')">Daftar</button>
+            </div>
+            <div class="login-form">
+                <input type="text" id="auth-user" placeholder="Username (3-20 karakter)" autocomplete="username">
+                <input type="password" id="auth-pass" placeholder="Password (min 4 karakter)" autocomplete="current-password">
+                <p class="login-err" id="auth-err"></p>
+                <button class="btn primary" id="auth-submit" onclick="doAuth()">Masuk</button>
+                <div class="login-divider"><span>atau</span></div>
+                <button class="btn ghost" onclick="doGuest()">
+                    <svg viewBox="0 0 24 24" class="ic"><path d="M12 12a4 4 0 100-8 4 4 0 000 8zM4 21v-1a8 8 0 0116 0v1"/></svg>
+                    Lanjut sebagai Tamu
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= TOAST ================= -->
+    <div id="toast" class="toast"></div>
+
+    <script src="/static/app.js?v=35"></script>
+</body>
+</html>
