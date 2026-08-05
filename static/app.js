@@ -2,7 +2,7 @@
 
 // Nomor versi UI (build). NAIKKAN 1 tiap rombak frontend — tampil di footer
 // supaya bisa dicek tanpa buka inspect element. Kunci dari "cara ngecek bump".
-const UI_VERSION = 40;
+const UI_VERSION = 42;
 
 const $ = (s) => document.querySelector(s);
 
@@ -904,7 +904,7 @@ function renderSongs(songs) {
                 <button class="btn mini" onclick="musicPlay(${i})" title="Putar">${IC.play} Putar</button>
                 <button class="btn mini" onclick="musicDownload('${esc(s.videoId)}', ${i}, 'mp3')" title="Unduh MP3">${IC.download} MP3</button>
                 <button class="btn mini" onclick="musicDownload('${esc(s.videoId)}', ${i}, 'm4a')" title="Unduh M4A">${IC.download} M4A</button>
-                <button class="btn mini ghost" onclick="openPlaylistPicker(${i}, event)" title="Simpan ke playlist">＋</button>
+                <button class="btn mini ghost" onclick="openPlaylistPicker(${i}, event)" title="Simpan ke playlist"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
             </span>
         </div>`).join('')}
     </div>`;
@@ -1504,6 +1504,17 @@ async function removePlaylistItem(pid, iid, i) {
    ============================================================ */
 let _player = { list: [], index: -1, shuffle: false };
 
+/* ————— alur putar: unduh audio dulu (jalur download yang TERBUKTI jalan),
+        lalu putar file MP3 lokal. Ini jauh lebih andal daripada stream proxy
+        (yang resolve URL YouTube tiap request — lambat/gagal di IP datacenter). */
+let _streamJobId = null;
+let _streamTimer = null;
+
+function cancelStreamJob() {
+    if (_streamTimer) { clearInterval(_streamTimer); _streamTimer = null; }
+    _streamJobId = null;
+}
+
 function playSongAt(song, list, idx) {
     if (!song || !song.videoId) { toast('Lagu ini tidak bisa diputar.', true); return; }
     _player.list = list || [];
@@ -1518,26 +1529,84 @@ function playSongAt(song, list, idx) {
     th.src = song.thumbnail || '';
     th.style.visibility = song.thumbnail ? '' : 'hidden';
 
+    // matikan job stream lama & audio sebelumnya
+    cancelStreamJob();
+    const audio = $('#player-audio');
+    clearTimeout(audio._watchdog);
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+    audio._errShown = false;
+    setPlayerUI('loading');
+    playerShowMsg('Menyiapkan audio… 0%');
+
+    prepareAndPlay(song);
+}
+
+async function prepareAndPlay(song) {
+    try {
+        const d = await fetchJSON('/api/music-prepare', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                video_id: song.videoId,
+                title: (song.title || 'Lagu') + (song.artist ? ' — ' + song.artist : ''),
+            }),
+        });
+        _streamJobId = d.job_id;
+        pollStreamJob();
+    } catch (e) {
+        setPlayerUI('paused');
+        playerShowMsg('Gagal menyiapkan audio. Coba unduh MP3-nya ya!');
+    }
+}
+
+function pollStreamJob() {
+    if (_streamTimer) clearInterval(_streamTimer);
+    _streamTimer = setInterval(() => {
+        if (!_streamJobId) return;
+        fetchJSON('/api/job/' + _streamJobId).then(j => {
+            if (!_streamJobId) return;   // sudah ganti lagu
+            if (j.status === 'done') {
+                clearInterval(_streamTimer); _streamTimer = null;
+                const jid = _streamJobId;
+                playPreparedAudio(jid);
+            } else if (j.status === 'error') {
+                clearInterval(_streamTimer); _streamTimer = null;
+                setPlayerUI('paused');
+                playerShowMsg(j.error || 'Gagal menyiapkan audio.');
+                autoSkipIfAny();
+            } else {
+                const pct = Math.round(j.progress || 0);
+                playerShowMsg('Menyiapkan audio… ' + pct + '%');
+            }
+        }).catch(() => { /* transien — biarkan polling lanjut */ });
+    }, 1500);
+}
+
+function playPreparedAudio(jobId) {
     const audio = $('#player-audio');
     audio._errShown = false;
-    audio._errMsg = '';
-    setPlayerUI('loading');
-    $('#player-msg').classList.add('hidden');
-    audio.src = '/api/music-stream/' + encodeURIComponent(song.videoId);
+    audio.src = '/api/music-file/' + jobId;
     audio.load();
-
-    // Watchdog: kalau 25 detik belum mulai berbunyi, kasih pesan jelas.
+    const p = audio.play();
+    if (p && p.catch) p.catch(() => { /* error ditangani via event error */ });
     clearTimeout(audio._watchdog);
     audio._watchdog = setTimeout(() => {
         if (!audio.paused || audio.readyState > 0) return;
         if (audio._errShown) return;
         audio._errShown = true;
         setPlayerUI('paused');
-        playerShowMsg('Lagu ini butuh waktu lama untuk mulai — coba lagu lain atau unduh MP3-nya.');
-    }, 25000);
+        playerShowMsg('Audio siap tapi tidak bisa diputar di perangkat ini.');
+        autoSkipIfAny();
+    }, 12000);
+}
 
-    const p = audio.play();
-    if (p && p.catch) p.catch(() => { /* error ditangani via event error */ });
+function autoSkipIfAny() {
+    const list = _player.list;
+    if (list && list.length > 1) {
+        setTimeout(() => playerNext(true), 1500);
+        toast('Lagu gagal — otomatis lewati ke berikutnya.', true);
+    }
 }
 
 function playerShowMsg(text) {
@@ -1582,6 +1651,7 @@ function playerSeekInput(el) {
 function playerClose() {
     const audio = $('#player-audio');
     clearTimeout(audio._watchdog);
+    cancelStreamJob();
     audio.pause();
     audio.removeAttribute('src');
     audio.load();
@@ -1786,58 +1856,8 @@ function playerQueueRemove(i) {
         audio2._errShown = true;
         clearTimeout(audio2._watchdog);
         setPlayerUI('paused');
-        playerShowMsg('Gagal memutar lagu ini — mencoba sekali lagi…');
-        // Retry sekali: muat ulang stream (backend otomatis resolve URL baru
-        // kalau yang lama basi/diblokir). Kalau masih gagal → auto-lewati.
-        const retry = () => {
-            audio2._errShown = false;
-            const src = audio2.src;
-            audio2.removeAttribute('src');
-            audio2.load();
-            audio2.src = src.split('?')[0] + '?retry=' + Date.now();
-            setPlayerUI('loading');
-            audio2._watchdog = setTimeout(() => {
-                if (!audio2.paused || audio2.readyState > 0) return;
-                if (audio2._errShown) return;
-                audio2._errShown = true;
-                setPlayerUI('paused');
-                playerShowMsg('Lagu ini tidak bisa diputar dari server. Coba unduh MP3-nya ya!');
-                const list = _player.list;
-                if (list && list.length > 1) {
-                    setTimeout(() => playerNext(true), 1200);
-                    toast('Lagu gagal diputar — otomatis lewati ke berikutnya.', true);
-                }
-            }, 15000);
-            audio2.play().catch(() => {});
-        };
-        // cek pesan error dari server (kalau JSON) sebelum retry
-        const ctl = new AbortController();
-        const tm = setTimeout(() => ctl.abort(), 10000);
-        fetch(audio2.src, { headers: { 'Range': 'bytes=0-0' }, signal: ctl.signal })
-            .then(async r => {
-                clearTimeout(tm);
-                const ct = (r.headers.get('content-type') || '').toLowerCase();
-                let msg = '';
-                if (ct.includes('json')) {
-                    const j = await r.json().catch(() => null);
-                    msg = (j && j.error) || '';
-                }
-                if (msg) {
-                    playerShowMsg(msg);
-                    const list = _player.list;
-                    if (list && list.length > 1) {
-                        setTimeout(() => playerNext(true), 1200);
-                        toast('Lagu gagal diputar — otomatis lewati ke berikutnya.', true);
-                    }
-                } else {
-                    // server siap → retry sekali dengan URL baru
-                    retry();
-                }
-            })
-            .catch(() => {
-                clearTimeout(tm);
-                retry();
-            });
+        playerShowMsg('Lagu tidak bisa diputar di perangkat ini. Coba unduh MP3-nya ya!');
+        autoSkipIfAny();
     });
 })();
 

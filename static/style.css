@@ -908,7 +908,7 @@ select#format-select:focus { border-color: rgba(99,102,241,.6); box-shadow: 0 0 
 /* kolom kanan: alat (lirik, antrean, tutup) */
 .player-tools { grid-area: right; display: flex; align-items: center; gap: 6px; justify-self: end; }
 
-.has-player .toast { bottom: 100px; }
+
 
 /* ————— Panel lirik ————— */
 .lyrics-panel, .queue-panel {
@@ -1134,18 +1134,18 @@ select#format-select:focus { border-color: rgba(99,102,241,.6); box-shadow: 0 0 
 .state-error p { color: #e3c7c7; font-size: 12.5px; margin-top: 5px; line-height: 1.65; word-break: break-word; }
 
 .toast {
-    position: fixed; left: 50%; bottom: 30px; z-index: 100;
-    transform: translate(-50%, 170%);
+    position: fixed; left: 50%; top: 16px; z-index: 100;
+    transform: translate(-50%, -170%);
     background: rgba(20, 22, 32, .94); color: var(--text);
     border: 1px solid var(--border-strong);
     padding: 13px 23px; border-radius: 14px; font-size: 13px; font-weight: 600;
     box-shadow: var(--shadow-lg);
     backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
     max-width: 92vw;
-    pointer-events: none;               /* jangan blokir klik saat tersembunyi */
+    pointer-events: none;   /* toast tidak perlu diklik — jangan pernah blokir tombol */
     transition: transform .3s cubic-bezier(.17,.89,.32,1.2);
 }
-.toast.show { transform: translate(-50%, 0); pointer-events: auto; }
+.toast.show { transform: translate(-50%, 0); }
 .toast.err { border-color: rgba(248,113,113,.6); color: #ffdcdc; }
 
 .footer {
@@ -1240,10 +1240,18 @@ select#format-select:focus { border-color: rgba(99,102,241,.6); box-shadow: 0 0 
     .track-head { display: none; }
     .t-idx, .t-idx-play { width: 18px; font-size: 10.5px; }
     .t-main img { width: 41px; height: 41px; }
-    .t-title { font-size: 12.5px; }
+    .t-title { font-size: 12.5px; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .t-info { flex: 1; min-width: 0; }
     .t-album { display: none; }
-    .t-dur { width: auto; min-width: 36px; font-size: 10.5px; }
-    .t-actions .btn.mini { padding: 8px 11px; font-size: 11px; }
+    .t-dur { display: none; }
+    /* Tombol aksi jadi ikon-only supaya judul lagu muat & tidak terpotong */
+    .t-actions .btn.mini {
+        width: 34px; height: 34px; padding: 0; font-size: 0;
+        justify-content: center; align-items: center; flex: none;
+        border-radius: 9px;
+    }
+    .t-actions .btn.mini .ic { width: 15px; height: 15px; margin: 0; }
+    .t-actions .btn.mini svg { width: 15px; height: 15px; }
     .music-cards { grid-template-columns: repeat(2, 1fr); gap: 10px; }
     .mcard { padding: 10px; }
     .mcard-title { font-size: 12px; }
@@ -1263,7 +1271,7 @@ select#format-select:focus { border-color: rgba(99,102,241,.6); box-shadow: 0 0 
 
     .progress-card { padding: 16px; border-radius: 13px; }
     .progress-pct { font-size: 27px; min-width: 64px; }
-    .toast { bottom: 20px; font-size: 12.5px; }
+    .toast { top: 12px; font-size: 12.5px; }
 
     /* Pemutar menempel di bawah — mobile: 2 baris (atas info, bawah kontrol) */
     .player-bar {
@@ -1286,6 +1294,6 @@ select#format-select:focus { border-color: rgba(99,102,241,.6); box-shadow: 0 0 
     .pbtn-main { width: 40px; height: 40px; }
     #player-seek { height: 5px; }
     .player-time { font-size: 9.5px; min-width: 30px; }
-    .has-player .toast { bottom: 120px; }
+
     .lyrics-panel, .queue-panel { right: 10px; bottom: 118px; width: calc(100vw - 20px); max-height: 62vh; }
 }

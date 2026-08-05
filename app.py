@@ -2707,6 +2707,98 @@ def make_progress_hook(job):
     return hook
 
 
+def run_music_prepare(job, video_id):
+    """Siapkan audio untuk DIPUTAR (jalur paling andal: unduh lalu putar file).
+
+    Strategi:
+      1) bestaudio[ext=m4a] — AAC asli YouTube (itag 140). Tanpa konversi,
+         tanpa ffmpeg → cepat & diputar di semua browser.
+      2) bestaudio/best → konversi MP3 (butuh ffmpeg, tersedia di Railway).
+      3) bestaudio/best tanpa konversi (kalau ffmpeg tidak ada) → tetap serve.
+    Memakai mesin yt_download_with_retry yang sama dengan download (terbukti
+    menembus blokir IP datacenter: rotasi client + PO token + cooldown)."""
+    job_id = job['id']
+    job['_start'] = time.time()
+    job['status'] = 'downloading'
+    job['message'] = 'Menyiapkan audio…'
+    job['progress'] = 0
+    clean_id = re.sub(r'[^0-9A-Za-z_-]', '', video_id or '')
+    if not clean_id:
+        job['status'] = 'error'
+        job['error'] = 'ID lagu tidak valid.'
+        return False
+    url = 'https://www.youtube.com/watch?v=' + clean_id
+    outtmpl = os.path.join(DOWNLOADS_DIR, job_id + '.%(ext)s')
+    base = base_ydl_opts()
+    base['outtmpl'] = outtmpl
+    base['progress_hooks'] = [make_progress_hook(job)]
+
+    def attempt(fmt, postprocessors=None):
+        o = dict(base)
+        o['format'] = fmt
+        o.pop('merge_output_format', None)
+        o.pop('postprocessors', None)
+        if postprocessors:
+            o['postprocessors'] = postprocessors
+        yt_download_with_retry(url, o)
+        fp = find_job_file(job_id)
+        if not fp:
+            raise RuntimeError('File hasil tidak ditemukan.')
+        with open(fp, 'rb') as f:
+            head = f.read(16)
+        if not head:
+            raise RuntimeError('File hasil kosong.')
+        if head.lstrip()[:1] in (b'<', b'{'):
+            raise RuntimeError('Server membalas error, bukan audio.')
+        job['filepath'] = fp
+        job['status'] = 'done'
+        job['filename'] = os.path.basename(fp)
+        job['filesize_mb'] = mb(os.path.getsize(fp))
+        job['message'] = 'Siap diputar'
+        return True
+
+    # 1) AAC asli tanpa konversi
+    try:
+        if attempt('bestaudio[ext=m4a]/bestaudio[ext=mp4]/bestaudio/best'):
+            return True
+    except Exception:
+        pass
+    # 2) konversi MP3 (ffmpeg)
+    try:
+        if attempt('bestaudio/best',
+                   [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3',
+                     'preferredquality': '192'}]):
+            return True
+    except Exception:
+        pass
+    # 3) audio apa pun tanpa konversi (cadangan)
+    try:
+        if attempt('bestaudio/best'):
+            return True
+    except Exception:
+        pass
+    job['status'] = 'error'
+    job['error'] = 'Lagu ini gagal disiapkan dari server. Coba unduh MP3-nya ya!'
+    return False
+
+
+@app.route('/api/music-prepare', methods=['POST'])
+def api_music_prepare():
+    """Mulai siapkan audio lagu (background) → job_id untuk dipoll."""
+    data = request.get_json(silent=True) or {}
+    video_id = (data.get('video_id') or '').strip()
+    if not video_id:
+        return jsonify({'error': 'ID lagu wajib.'}), 400
+    job = new_job()
+    if data.get('title'):
+        job['_title'] = str(data['title'])[:120]
+    job['_platform'] = 'youtube'
+    job['_mode'] = 'stream'
+    t = threading.Thread(target=run_music_prepare, args=(job, video_id), daemon=True)
+    t.start()
+    return jsonify({'ok': True, 'job_id': job['id']})
+
+
 def run_download(job, url, mode, format_id, resolution=DEFAULT_RESOLUTION,
                  force_ie=None):
     """Jalankan download yt-dlp di background thread — dengan strategi
@@ -3794,6 +3886,31 @@ def api_file(job_id):
         return resp
 
     return send_file(filepath, as_attachment=True, download_name=download_name)
+
+
+@app.route('/api/music-file/<job_id>')
+def api_music_file(job_id):
+    """Sajikan audio hasil prepare untuk DIPUTAR di browser (bukan download).
+
+    Beda dengan /api/file: file TIDAK dihapus setelah dikirim (biar bisa di-seek
+    & diputar ulang), mendukung Range (seeking), dan memakai content-type audio
+    yang benar. File dibersihkan oleh mekanisme TTL job biasa."""
+    job = JOBS.get(job_id)
+    if not job or job['status'] != 'done' or not job['filepath']:
+        return jsonify({'error': 'Audio belum siap.'}), 404
+    filepath = job['filepath']
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'File sudah terhapus.'}), 404
+    ext = (os.path.splitext(filepath)[1] or '').lstrip('.').lower()
+    ctype = {
+        'mp3': 'audio/mpeg', 'm4a': 'audio/mp4', 'mp4': 'audio/mp4',
+        'webm': 'audio/webm', 'opus': 'audio/ogg', 'ogg': 'audio/ogg',
+        'aac': 'audio/aac', 'wav': 'audio/wav',
+    }.get(ext, 'audio/mpeg')
+    resp = send_file(filepath, mimetype=ctype, conditional=True, max_age=0)
+    resp.headers['Accept-Ranges'] = 'bytes'
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
 
 
 MEDIA_EXT_BY_CTYPE = {
