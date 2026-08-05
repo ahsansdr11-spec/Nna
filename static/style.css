@@ -348,12 +348,13 @@ body {
     width: 42px; height: 42px; flex-shrink: 0; color: var(--faint);
 }
 .urlbox-ic .ic { width: 19px; height: 19px; }
-#url-input, #music-q {
+#url-input, #music-q, #manga-q, #news-q {
     flex: 1; min-width: 0; background: transparent; border: none; outline: none;
     color: var(--text); font-size: 15px; padding: 10px 4px;
     font-family: var(--font-body); caret-color: var(--a1);
 }
-#url-input::placeholder, #music-q::placeholder { color: var(--faint); }
+#url-input::placeholder, #music-q::placeholder,
+#manga-q::placeholder, #news-q::placeholder { color: var(--faint); }
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus {
@@ -362,7 +363,7 @@ input:-webkit-autofill:focus {
     caret-color: var(--a1);
     transition: background-color 9999s ease-in-out 0s;
 }
-#search-btn, #music-search-btn {
+#search-btn, #music-search-btn, #manga-search-btn, #news-refresh-btn {
     display: inline-flex; align-items: center; gap: 8px;
     background: var(--grad); color: #fff; border: none; border-radius: 15px;
     padding: 12px 22px; font-size: 13.5px; font-weight: 700; cursor: pointer;
@@ -370,8 +371,9 @@ input:-webkit-autofill:focus {
     box-shadow: 0 4px 20px rgba(99,102,241,.38);
     transition: filter .14s ease, transform .08s ease, box-shadow .14s ease;
 }
-#search-btn:hover, #music-search-btn:hover { filter: brightness(1.12); box-shadow: 0 6px 26px rgba(99,102,241,.5); }
-#search-btn:active, #music-search-btn:active { transform: scale(.97); }
+#search-btn:hover, #music-search-btn:hover, #manga-search-btn:hover, #news-refresh-btn:hover { filter: brightness(1.12); box-shadow: 0 6px 26px rgba(99,102,241,.5); }
+#search-btn:active, #music-search-btn:active, #manga-search-btn:active, #news-refresh-btn:active { transform: scale(.97); }
+#news-refresh-btn { font-size: 12.5px; padding: 12px 16px; }
 .ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- Quick chips ---------- */
@@ -1050,8 +1052,9 @@ select#format-select:focus { border-color: rgba(99,102,241,.6); box-shadow: 0 0 
 
     .urlbox { border-radius: 16px; padding: 6px; }
     .urlbox-ic { display: none; }
-    #url-input, #music-q { font-size: 16px; padding: 12px 10px; }
-    #search-btn, #music-search-btn { justify-content: center; padding: 13px 17px; }
+    #url-input, #music-q, #manga-q, #news-q { font-size: 16px; padding: 12px 10px; }
+    #search-btn, #music-search-btn, #manga-search-btn, #news-refresh-btn { justify-content: center; padding: 13px 17px; }
+    #news-refresh-btn { font-size: 12px; padding: 13px 13px; }
     .quick-chips { gap: 6px; }
     .qc { padding: 6px 12px; font-size: 11px; }
 

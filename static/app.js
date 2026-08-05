@@ -2,7 +2,7 @@
 
 // Nomor versi UI (build). NAIKKAN 1 tiap rombak frontend — tampil di footer
 // supaya bisa dicek tanpa buka inspect element. Kunci dari "cara ngecek bump".
-const UI_VERSION = 35;
+const UI_VERSION = 36;
 
 const $ = (s) => document.querySelector(s);
 
