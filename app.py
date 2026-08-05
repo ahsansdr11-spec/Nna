@@ -3296,8 +3296,12 @@ def api_auth_signup():
     data = request.get_json(silent=True) or {}
     username = (data.get('username') or '').strip()
     password = data.get('password') or ''
-    if not re.match(r'^[A-Za-z0-9_]{3,20}$', username):
-        return jsonify({'error': 'Username 3-20 karakter (huruf/angka/underscore).'}), 400
+    # Username bebas: emoji, simbol, spasi — sekreatif mungkin.
+    # Batas wajar: tidak boleh kosong, maks 50 karakter, tanpa karakter kontrol.
+    if not username or len(username) > 50:
+        return jsonify({'error': 'Username tidak boleh kosong, maksimal 50 karakter.'}), 400
+    if any(ord(c) < 32 for c in username):
+        return jsonify({'error': 'Username tidak boleh berisi karakter kontrol.'}), 400
     if len(password) < 4:
         return jsonify({'error': 'Password minimal 4 karakter.'}), 400
     exists = db_query("SELECT id FROM users WHERE username=?", (username,))
@@ -3579,7 +3583,18 @@ def api_manga_detail(mid):
                 fn = (rr.get('attributes') or {}).get('fileName')
                 if fn:
                     cover = 'https://uploads.mangadex.org/covers/%s/%s' % (mid, fn)
-        # daftar chapter: utamakan terjemahan EN/ID, fallback semua bahasa
+        # Pilihan bahasa: original (bahasa asli manga) / en / id
+        # Otomatis mengganti daftar chapter sesuai bahasa yang dipilih.
+        lang = (request.args.get('lang') or 'en').strip()
+        orig_lang = attrs.get('originalLanguage') or 'ja'
+        if lang == 'original':
+            want = [orig_lang]
+        elif lang == 'all':
+            want = None
+        else:
+            want = [lang] if lang in ('en', 'id') else ['en']
+
+        # daftar chapter sesuai bahasa pilihan
         def fetch_feed(langs):
             params = {'order[chapter]': 'asc', 'limit': 500}
             if langs:
@@ -3589,9 +3604,7 @@ def api_manga_detail(mid):
             r.raise_for_status()
             return r.json().get('data') or []
 
-        raw = fetch_feed(['en', 'id'])
-        if not raw:
-            raw = fetch_feed(None)   # belum ada EN/ID → tampilkan bahasa lain
+        raw = fetch_feed(want)
         chapters = []
         for ch in raw:
             ca = ch.get('attributes') or {}
@@ -3608,14 +3621,13 @@ def api_manga_detail(mid):
                 'lang': ca.get('translatedLanguage'),
                 'pages': pages,
             })
-        # sort: EN/ID didahulukan, lalu chapter number, lalu bahasa
-        LANG_PRIO = {'en': 0, 'id': 1}
+        # sort by chapter number, lalu bahasa
         chapters.sort(key=lambda c: (float(c['chapter'] or 0),
-                                     LANG_PRIO.get(c['lang'] or '', 9),
                                      c['lang'] or ''))
         return jsonify({'ok': True, 'id': mid, 'title': title,
                         'cover': cover, 'status': attrs.get('status'),
                         'description': ((attrs.get('description') or {}).get('en') or ''),
+                        'lang': lang, 'original_language': orig_lang,
                         'chapters': chapters[:400]})
     except Exception as e:
         return jsonify({'error': 'Gagal ambil manga: %s' % str(e)[:80]}), 502

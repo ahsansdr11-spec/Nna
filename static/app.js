@@ -2,7 +2,7 @@
 
 // Nomor versi UI (build). NAIKKAN 1 tiap rombak frontend — tampil di footer
 // supaya bisa dicek tanpa buka inspect element. Kunci dari "cara ngecek bump".
-const UI_VERSION = 36;
+const UI_VERSION = 37;
 
 const $ = (s) => document.querySelector(s);
 
@@ -1647,6 +1647,8 @@ async function submitPlatformRequest() {
 let _mangaTag = '';
 let _mangaTagName = '';
 let _mangaQ = '';
+let _mangaLang = 'en';   // bahasa chapter: original / en / id
+let _mangaMid = '';      // id manga yang sedang dibuka (untuk ganti bahasa)
 
 function mangaCardHtml(m) {
     const tags = (m.tags || []).map(t => `<span class="mg-chip">${esc(t)}</span>`).join('');
@@ -1731,11 +1733,15 @@ function mangaSetTag(key, name) {
 
 async function mangaOpen(mid) {
     const box = document.getElementById('manga-results');
+    _mangaMid = mid;
     showBusy(box, 'Memuat detail manga…');
     try {
-        const d = await fetchJSON('/api/manga/' + mid);
+        const d = await fetchJSON('/api/manga/' + mid + '?lang=' + encodeURIComponent(_mangaLang));
         stopBusy();
         if (!d.ok) throw new Error(d.error);
+        const origLabel = d.original_language
+            ? 'Bahasa Asli (' + esc(String(d.original_language).toUpperCase()) + ')'
+            : 'Bahasa Asli';
         box.innerHTML = `
             <div class="collection-head">
                 ${d.cover ? `<img src="/api/manga-img?url=${encodeURIComponent(d.cover)}" onerror="this.style.visibility='hidden'">` : ''}
@@ -1750,6 +1756,11 @@ async function mangaOpen(mid) {
                     </div>
                 </div>
             </div>
+            <div class="filter-pills manga-langs" aria-label="Pilih bahasa chapter">
+                <button class="pill ${_mangaLang === 'original' ? 'active' : ''}" data-l="original" onclick="mangaSetLang('original')">${origLabel}</button>
+                <button class="pill ${_mangaLang === 'en' ? 'active' : ''}" data-l="en" onclick="mangaSetLang('en')">English</button>
+                <button class="pill ${_mangaLang === 'id' ? 'active' : ''}" data-l="id" onclick="mangaSetLang('id')">Indonesia</button>
+            </div>
             <h3 class="music-cards-head">Chapter (${d.chapters.length})</h3>
             ${d.chapters.length
                 ? `<div class="chapter-list">${d.chapters.slice(0, 80).map(c => `
@@ -1757,11 +1768,17 @@ async function mangaOpen(mid) {
                         <span class="cr-t">Chapter ${esc(c.chapter || '?')}${c.title ? ' — ' + esc(c.title) : ''}</span>
                         <span class="cr-s">${esc(c.lang || '')} · ${c.pages} halaman</span>
                     </div>`).join('')}</div>`
-                : `<div class="music-empty"><p>Belum ada chapter yang bisa dibaca untuk manga ini.</p></div>`}`;
+                : `<div class="music-empty"><p>Belum ada chapter dalam bahasa ini — coba pilih bahasa lain di atas ya!</p></div>`}`;
     } catch (e) {
         stopBusy();
         box.innerHTML = `<div class="state-error"><b>Gagal buka manga</b><p>${esc(e.message)}</p></div>`;
     }
+}
+
+function mangaSetLang(l) {
+    _mangaLang = l || 'en';
+    if (_mangaMid) mangaOpen(_mangaMid);
+    else mangaRecommend();
 }
 
 function mangaBack() {

@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=36">
+    <link rel="stylesheet" href="/static/style.css?v=37">
 </head>
 <body>
 
@@ -378,14 +378,14 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                 </div>
                 <h2>Masuk ke <span class="grad">Universal Downloader</span></h2>
-                <p class="muted">Buat akun gratis atau lanjut sebagai tamu. Riwayat download &amp; chat tersimpan di akunmu.</p>
+                <p class="muted">Buat akun gratis atau lanjut sebagai tamu. Riwayat download &amp; chat tersimpan di akunmu. Username bebas — pakai emoji, simbol, atau spasi sesukamu! 😎</p>
             </div>
             <div class="login-tabs">
                 <button class="pill active" id="lt-login" onclick="loginTab('login')">Masuk</button>
                 <button class="pill" id="lt-signup" onclick="loginTab('signup')">Daftar</button>
             </div>
             <div class="login-form">
-                <input type="text" id="auth-user" placeholder="Username (3-20 karakter)" autocomplete="username">
+                <input type="text" id="auth-user" placeholder="Username (bebas — emoji/simbol/spasi)" autocomplete="username">
                 <input type="password" id="auth-pass" placeholder="Password (min 4 karakter)" autocomplete="current-password">
                 <p class="login-err" id="auth-err"></p>
                 <button class="btn primary" id="auth-submit" onclick="doAuth()">Masuk</button>
@@ -401,6 +401,6 @@
     <!-- ================= TOAST ================= -->
     <div id="toast" class="toast"></div>
 
-    <script src="/static/app.js?v=36"></script>
+    <script src="/static/app.js?v=37"></script>
 </body>
 </html>
