@@ -166,3 +166,9 @@ YouTube, TikTok, Instagram, Facebook, X (Twitter), Pinterest, Spotify, Dailymoti
 SoundCloud, Archive.org, Twitch, Bandcamp, Mixcloud, Streamable, Bilibili, Vimeo,
 SnackVideo, RedNote, Videy, **GitHub, MediaFire, Threads, Snapchat, Reddit,
 Douyin, Rutube**.
+
+
+## 🐛 Lapor Bug / Feedback
+
+Ada halaman "Lapor Bug / Feedback" di tab **Cara Pakai** — tulis kendala/fitur,
+laporan masuk ke daftar feedback global (tersimpan di database, aman di volume).

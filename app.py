@@ -107,20 +107,43 @@ app = Flask(__name__, static_folder='static')
 # DATA_DIR: biarkan kosong → data.db di folder proyek. Untuk deploy yang
 # dibangun ulang tiap push (Railway/Render), SET DATA_DIR ke folder volume
 # persisten (mis. /data) supaya akun/chat/riwayat TIDAK hilang saat redeploy.
-_DATA_DIR = (os.environ.get('DATA_DIR') or '').strip()
-if _DATA_DIR:
-    try:
-        os.makedirs(_DATA_DIR, exist_ok=True)
-        _probe = os.path.join(_DATA_DIR, '.write_test')
-        with open(_probe, 'w') as _f:
-            _f.write('ok')
-        os.remove(_probe)
-        DB_PATH = os.path.join(_DATA_DIR, 'data.db')
-    except Exception:
-        # volume tidak bisa ditulis → fallback ke folder proyek
-        DB_PATH = os.path.join(BASE_DIR, 'data.db')
+def _pick_data_dir():
+    """Tentukan folder penyimpanan data (akun/chat/riwayat/playlist/feedback).
+
+    Prioritas:
+      1) env DATA_DIR (mis. '/data' — volume persisten Railway/Render).
+      2) /data — volume Railway yang di-mount tanpa env (auto-detect).
+      3) folder proyek (data.db di samping app.py).
+    Auto-detect /data membuat akun TIDAK hilang saat push, bahkan kalau user
+    lupa set DATA_DIR — cukup mount volume di path /data.
+    """
+    cands = []
+    env = (os.environ.get('DATA_DIR') or '').strip()
+    if env:
+        cands.append(env)
+    cands.append('/data')
+    cands.append('/app/data')
+    for d in cands:
+        try:
+            os.makedirs(d, exist_ok=True)
+            probe = os.path.join(d, '.write_test')
+            with open(probe, 'w') as f:
+                f.write('ok')
+            os.remove(probe)
+            return d
+        except Exception:
+            continue
+    return BASE_DIR
+
+
+_DATA_DIR = _pick_data_dir()
+DB_PATH = os.path.join(_DATA_DIR, 'data.db')
+if _DATA_DIR != BASE_DIR:
+    print('[DB] Data tersimpan di volume: %s (akun/chat/riwayat AMAN saat redeploy)' % _DATA_DIR)
 else:
-    DB_PATH = os.path.join(BASE_DIR, 'data.db')
+    print('[PERINGATAN] DATA_DIR tidak di-set & volume tidak ditemukan — data.db '
+          'di folder proyek akan RESET saat redeploy. Mount volume Railway di /data '
+          'atau set env DATA_DIR=/data supaya akun tidak hilang.')
 DB_LOCK = threading.Lock()
 
 
@@ -175,6 +198,14 @@ def db_init():
             playlist_id INTEGER,
             video_id TEXT, title TEXT, artist TEXT, thumbnail TEXT,
             pos INTEGER, created REAL
+        );
+        CREATE TABLE IF NOT EXISTS feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            username TEXT,
+            message TEXT,
+            page TEXT,
+            created REAL
         );
         ''')
         c.commit()
@@ -4423,17 +4454,37 @@ def api_news():
     # mode "Semua sumber" = gabungkan semua feed di kategori itu → feed terbaru live
     if not source or source == 'all':
         srcs = [s for s in NEWS_SOURCES if category in s['feeds']]
-        merged, seen = [], set()
-        for s in srcs:
+
+        def fetch_one(s):
             url = s['feeds'].get(category) or next(iter(s['feeds'].values()))
-            for it in _rss_cached(s['key'] + '|' + category, url):
+            try:
+                items = _rss_cached(s['key'] + '|' + category, url)
+            except Exception:
+                items = []
+            out = []
+            for it in items:
+                item = dict(it)
+                item['source'] = s['name']
+                out.append(item)
+            return out
+
+        # Ambil semua feed SECARA PARALEL (dulu berurutan → kategori dengan 10
+        # sumber bisa makan waktu >100 detik & timeout). Fail-cepat per sumber:
+        # satu feed gagal tidak menahan yang lain.
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(len(srcs), 8)) as pool:
+                chunks = list(pool.map(fetch_one, srcs))
+        except Exception:
+            chunks = [fetch_one(s) for s in srcs]
+        merged, seen = [], set()
+        for chunk in chunks:
+            for it in chunk:
                 key = (it.get('title') or '').strip().lower()
                 if key and key in seen:
                     continue
                 seen.add(key)
-                item = dict(it)
-                item['source'] = s['name']
-                merged.append(item)
+                merged.append(it)
         merged.sort(key=lambda x: x.get('ts') or 0, reverse=True)
         if q:
             merged = [x for x in merged if q in (x.get('title') or '').lower()
@@ -4694,6 +4745,35 @@ def api_manga_history_clear():
         return jsonify({'error': 'Login dulu.'}), 401
     db_exec("DELETE FROM manga_history WHERE user_id=?", (user['id'],))
     return jsonify({'ok': True})
+
+
+# ============================================================================
+# FEEDBACK BUG — lapor bug / saran dari pengguna
+# ============================================================================
+@app.route('/api/feedback', methods=['GET', 'POST'])
+def api_feedback():
+    if request.method == 'GET':
+        rows = db_query(
+            "SELECT username, message, page, created FROM feedback "
+            "ORDER BY created DESC LIMIT 30")
+        return jsonify({'ok': True, 'items': [dict(r) for r in rows]})
+    data = request.get_json(silent=True) or {}
+    message = (data.get('message') or '').strip()
+    if not message:
+        return jsonify({'error': 'Tulis pesan dulu.'}), 400
+    if len(message) > 2000:
+        return jsonify({'error': 'Pesan terlalu panjang (maks 2000 karakter).'}), 400
+    user = None
+    try:
+        user = _auth_from_request()
+    except Exception:
+        pass
+    username = (user['username'] if user else 'Tamu')
+    user_id = user['id'] if user else None
+    page = (data.get('page') or '')[:40]
+    db_exec("INSERT INTO feedback (user_id, username, message, page, created) VALUES (?,?,?,?,?)",
+            (user_id, username, message, page, time.time()))
+    return jsonify({'ok': True, 'message': 'Terima kasih! Laporanmu sudah masuk. 🙏'})
 
 
 if __name__ == '__main__':

@@ -2,7 +2,7 @@
 
 // Nomor versi UI (build). NAIKKAN 1 tiap rombak frontend — tampil di footer
 // supaya bisa dicek tanpa buka inspect element. Kunci dari "cara ngecek bump".
-const UI_VERSION = 39;
+const UI_VERSION = 40;
 
 const $ = (s) => document.querySelector(s);
 
@@ -336,7 +336,10 @@ async function init() {
     const mgq = document.getElementById('manga-q');
     if (mgq) mgq.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') mangaSearch(); });
     const nq = document.getElementById('news-q');
-    if (nq) nq.addEventListener('input', () => newsFilterNow());
+    if (nq) {
+        nq.addEventListener('input', () => newsFilterNow());
+        nq.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') newsSearchEnter(); });
+    }
 
     // Bersihkan elemen sisa dari sesi sebelumnya (kalau ada) supaya tab selalu
     // bersih saat pertama dibuka — tidak ada kotak progress/done yang nyangkut.
@@ -1783,10 +1786,33 @@ function playerQueueRemove(i) {
         audio2._errShown = true;
         clearTimeout(audio2._watchdog);
         setPlayerUI('paused');
-        playerShowMsg('Gagal memutar lagu ini dari server.');
-        // cek pesan error dari server (kalau JSON)
+        playerShowMsg('Gagal memutar lagu ini — mencoba sekali lagi…');
+        // Retry sekali: muat ulang stream (backend otomatis resolve URL baru
+        // kalau yang lama basi/diblokir). Kalau masih gagal → auto-lewati.
+        const retry = () => {
+            audio2._errShown = false;
+            const src = audio2.src;
+            audio2.removeAttribute('src');
+            audio2.load();
+            audio2.src = src.split('?')[0] + '?retry=' + Date.now();
+            setPlayerUI('loading');
+            audio2._watchdog = setTimeout(() => {
+                if (!audio2.paused || audio2.readyState > 0) return;
+                if (audio2._errShown) return;
+                audio2._errShown = true;
+                setPlayerUI('paused');
+                playerShowMsg('Lagu ini tidak bisa diputar dari server. Coba unduh MP3-nya ya!');
+                const list = _player.list;
+                if (list && list.length > 1) {
+                    setTimeout(() => playerNext(true), 1200);
+                    toast('Lagu gagal diputar — otomatis lewati ke berikutnya.', true);
+                }
+            }, 15000);
+            audio2.play().catch(() => {});
+        };
+        // cek pesan error dari server (kalau JSON) sebelum retry
         const ctl = new AbortController();
-        const tm = setTimeout(() => ctl.abort(), 12000);
+        const tm = setTimeout(() => ctl.abort(), 10000);
         fetch(audio2.src, { headers: { 'Range': 'bytes=0-0' }, signal: ctl.signal })
             .then(async r => {
                 clearTimeout(tm);
@@ -1796,21 +1822,21 @@ function playerQueueRemove(i) {
                     const j = await r.json().catch(() => null);
                     msg = (j && j.error) || '';
                 }
-                if (msg) playerShowMsg(msg);
-                // otomatis lewati ke lagu berikutnya (kalau ada) — tidak menggantung
-                const list = _player.list;
-                if (list && list.length > 1) {
-                    setTimeout(() => playerNext(true), 1200);
-                    toast('Lagu gagal diputar — otomatis lewati ke berikutnya.', true);
+                if (msg) {
+                    playerShowMsg(msg);
+                    const list = _player.list;
+                    if (list && list.length > 1) {
+                        setTimeout(() => playerNext(true), 1200);
+                        toast('Lagu gagal diputar — otomatis lewati ke berikutnya.', true);
+                    }
+                } else {
+                    // server siap → retry sekali dengan URL baru
+                    retry();
                 }
             })
             .catch(() => {
                 clearTimeout(tm);
-                const list = _player.list;
-                if (list && list.length > 1) {
-                    setTimeout(() => playerNext(true), 1200);
-                    toast('Lagu gagal diputar — otomatis lewati ke berikutnya.', true);
-                }
+                retry();
             });
     });
 })();
@@ -1995,6 +2021,56 @@ async function loadPlatformRequests() {
                 </div>`).join('')
             : '<span class="muted">Belum ada saran. Jadilah yang pertama!</span>';
     } catch (e) { box.innerHTML = ''; }
+}
+
+/* ============================================================
+   FEEDBACK BUG — lapor bug / saran
+   ============================================================ */
+async function submitFeedback() {
+    const msg = (document.getElementById('fb-msg').value || '').trim();
+    const status = document.getElementById('fb-status');
+    if (!msg) { toast('Tulis pesan dulu ya!', true); return; }
+    status.textContent = 'Mengirim…';
+    try {
+        // deteksi halaman aktif untuk konteks laporan
+        let page = 'beranda';
+        const views = ['home', 'music', 'manga', 'news', 'chat', 'about'];
+        for (const v of views) {
+            const el = document.getElementById('view-' + v);
+            if (el && !el.classList.contains('hidden')) { page = v; break; }
+        }
+        const res = await fetchJSON('/api/feedback', {
+            method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ message: msg, page: page }),
+        });
+        status.textContent = res.message || 'Terima kasih!';
+        document.getElementById('fb-msg').value = '';
+        loadFeedback();
+        setTimeout(() => { status.textContent = ''; }, 4000);
+    } catch (e) {
+        status.textContent = '';
+        toast(e.message, true);
+    }
+}
+
+async function loadFeedback() {
+    const box = document.getElementById('fb-list');
+    if (!box) return;
+    try {
+        const d = await fetchJSON('/api/feedback');
+        const items = d.items || [];
+        if (!items.length) {
+            box.innerHTML = '<div class="muted" style="font-size:12px">Belum ada laporan. Jadilah yang pertama! 👑</div>';
+            return;
+        }
+        box.innerHTML = '<div class="muted" style="font-size:11px;margin-bottom:6px">Laporan terbaru:</div>' +
+            items.slice(0, 8).map(f => `
+            <div class="fb-row">
+                <span class="fb-name no-translate">${esc(f.username)}</span>
+                <span class="fb-time">${new Date(f.created * 1000).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                <span class="fb-text">${esc(f.message)}</span>
+            </div>`).join('');
+    } catch (e) { /* abaikan */ }
 }
 
 async function submitPlatformRequest() {
@@ -2331,10 +2407,13 @@ function newsSetCat(cat) {
     document.querySelectorAll('#news-cats .pill').forEach(b =>
         b.classList.toggle('active', b.dataset.c === cat));
     _newsSrc = 'all';
+    // bersihkan kolom cari — biar tidak ada kata kunci sisa dari kategori lama
+    const nq = document.getElementById('news-q');
+    if (nq) nq.value = '';
     fetchJSON('/api/news-sources').then(d => {
         renderNewsSources(d.categories);
         loadNews();
-    });
+    }).catch(() => loadNews());
 }
 
 function newsSetSrc(key) {
@@ -2344,18 +2423,29 @@ function newsSetSrc(key) {
     loadNews();
 }
 
+function newsCurrentQuery() {
+    const nq = document.getElementById('news-q');
+    return nq ? (nq.value || '').trim() : '';
+}
+
 async function loadNews() {
     const box = document.getElementById('news-results');
     if (!box) return;
+    const q = newsCurrentQuery();
     box.innerHTML = '<div class="music-empty">Memuat berita…</div>';
     try {
+        // Kirim kata kunci ke server juga — kalau data belum termuat, pencarian
+        // tetap bekerja (server memfilter judul/isi).
         const d = await fetchJSON('/api/news?source=' + encodeURIComponent(_newsSrc) +
-                                  '&category=' + encodeURIComponent(_newsCat));
+                                  '&category=' + encodeURIComponent(_newsCat) +
+                                  '&q=' + encodeURIComponent(q));
         const items = d.items || [];
         _newsItems = items;
         _newsUpdated = d.updated_at || Math.floor(Date.now() / 1000);
         if (!items.length) {
-            box.innerHTML = '<div class="music-empty"><p>Belum ada berita dari sumber ini.</p></div>';
+            box.innerHTML = `<div class="music-empty"><p>${q
+                ? `Tidak ada berita yang cocok dengan "${esc(q)}". Coba kata kunci lain.`
+                : 'Belum ada berita dari sumber ini.'}</p></div>`;
             updateNewsLive();
             return;
         }
@@ -2375,11 +2465,20 @@ function newsRefresh() {
 }
 
 function newsFilterNow() {
-    // filter instan client-side saat mengetik di kolom cari
-    const q = (document.getElementById('news-q').value || '').trim().toLowerCase();
+    // filter instan client-side saat mengetik di kolom cari; kalau tidak ada
+    // item yang cocok di data ter-muat, minta server cari (debounce singkat).
+    const q = (document.getElementById('news-q').value || '').trim();
     const box = document.getElementById('news-results');
+    const ql = q.toLowerCase();
     const items = _newsItems.filter(n =>
-        !q || (n.title || '').toLowerCase().includes(q) || (n.desc || '').toLowerCase().includes(q));
+        !ql || (n.title || '').toLowerCase().includes(ql) || (n.desc || '').toLowerCase().includes(ql));
+    if (q && !items.length && _newsItems.length) {
+        // tidak ada di data ter-muat → coba server
+        clearTimeout(newsFilterNow._tm);
+        newsFilterNow._tm = setTimeout(() => loadNews(), 450);
+        box.innerHTML = '<div class="music-empty">Mencari di semua sumber…</div>';
+        return;
+    }
     if (!items.length) {
         box.innerHTML = `<div class="music-empty"><p>${q ? 'Tidak ada berita yang cocok dengan "' + esc(q) + '".' : 'Belum ada berita.'}</p></div>`;
         return;
@@ -2387,6 +2486,11 @@ function newsFilterNow() {
     const respSource = (items[0] && items[0].source) || '';
     box.innerHTML = `<div class="news-grid">` +
         items.map(n => newsCardHtml(n, respSource)).join('') + `</div>`;
+}
+
+function newsSearchEnter() {
+    // Enter di kolom cari → paksa cari ke server (fresh load dengan kata kunci)
+    loadNews();
 }
 
 /* ============================================================
@@ -2444,6 +2548,7 @@ checkAuth().then(() => {
 });
 loadNewsSetup();
 loadPlatformRequests();
+loadFeedback();
 mangaInitGenres().then(() => mangaRecommend());
 // Berita live: refresh otomatis tiap 2 menit saat tab Berita sedang terbuka,
 // dan perbarui teks "Live — diperbarui …" tiap 30 detik.

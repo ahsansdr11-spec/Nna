@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=39">
+    <link rel="stylesheet" href="/static/style.css?v=40">
 </head>
 <body>
 
@@ -282,6 +282,24 @@
                 <div id="history-box" class="muted">Login untuk melihat riwayat download-mu.</div>
             </div>
 
+            <div class="card mb-3">
+                <div class="card-head">
+                    <span class="card-ic grad-ic">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M12 2a7 7 0 00-4 12.7V17a1 1 0 002 0v-1.3A7 7 0 0012 2zm0 3a4 4 0 100 8 4 4 0 000-8zM7 21a1 1 0 100 2h10a1 1 0 100-2H7z"/></svg>
+                    </span>
+                    <h3 class="card-title">Lapor Bug / Feedback</h3>
+                </div>
+                <p class="muted">Ada yang rusak, aneh, atau mau minta fitur? Tulis di sini — laporan masuk ke kotak feedback semua pengguna.</p>
+                <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+                    <textarea id="fb-msg" rows="3" maxlength="2000" placeholder="Contoh: tombol putar di tab Musik tidak berbunyi…" style="width:100%;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;padding:11px 13px;color:var(--text);font-family:var(--font-body);font-size:13.5px;outline:none;resize:vertical"></textarea>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                        <button class="btn primary" onclick="submitFeedback()">Kirim Laporan</button>
+                        <span class="muted" style="font-size:11px" id="fb-status"></span>
+                    </div>
+                </div>
+                <div class="fb-list" id="fb-list" style="margin-top:14px"></div>
+            </div>
+
 
             <div class="card mb-3">
                 <div class="card-head">
@@ -361,14 +379,16 @@
 
     <!-- ================= PEMUTAR MUSIK ================= -->
     <div id="player-bar" class="player-bar hidden">
-        <img id="player-thumb" class="player-thumb" alt="" src="">
-        <div class="player-meta">
-            <span id="player-title" class="no-translate">–</span>
-            <span id="player-artist" class="no-translate player-artist">–</span>
-            <span id="player-msg" class="player-msg hidden"></span>
-        </div>
-        <div class="player-eq" id="player-eq" aria-hidden="true">
-            <span></span><span></span><span></span><span></span>
+        <div class="player-left">
+            <img id="player-thumb" class="player-thumb" alt="" src="">
+            <div class="player-meta">
+                <span id="player-title" class="no-translate">–</span>
+                <span id="player-artist" class="no-translate player-artist">–</span>
+                <span id="player-msg" class="player-msg hidden"></span>
+            </div>
+            <div class="player-eq" id="player-eq" aria-hidden="true">
+                <span></span><span></span><span></span><span></span>
+            </div>
         </div>
         <div class="player-center">
             <div class="player-controls">
@@ -459,6 +479,6 @@
     <!-- ================= TOAST ================= -->
     <div id="toast" class="toast"></div>
 
-    <script src="/static/app.js?v=39"></script>
+    <script src="/static/app.js?v=40"></script>
 </body>
 </html>

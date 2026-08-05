@@ -238,8 +238,8 @@ container yang dibangun ulang tiap push → data hilang. Solusi: pakai **Volume*
 
 1. Dashboard Railway → service → tab **Volumes** → **New Volume**.
 2. Mount path: `/data`.
-3. Tambah **Variables** → `DATA_DIR` = `/data`.
-4. Deploy ulang sekali. Setelah itu akun, chat, riwayat, playlist tersimpan permanen.
+3. Deploy ulang sekali. Aplikasi **otomatis mendeteksi** volume `/data` —
+   tidak perlu set env apa pun. Akun, chat, riwayat, playlist, feedback tersimpan permanen.
 
 Kode otomatis memakai `DATA_DIR` kalau di-set; kalau tidak, pakai `data.db` biasa.
 
