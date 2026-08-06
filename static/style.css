@@ -197,6 +197,57 @@ body {
     font-size: 13.5px; font-family: var(--font-body); outline: none;
 }
 .chat-input-row input:focus { border-color: rgba(99,102,241,.6); }
+.chat-paperclip { padding: 10px 12px; }
+.chat-paperclip .ic { width: 17px; height: 17px; }
+
+/* ————— Balas (reply) ————— */
+.chat-replybar {
+    display: flex; align-items: center; gap: 8px; padding: 7px 12px;
+    background: var(--grad-soft); border-top: 1px solid rgba(99,102,241,.3);
+    font-size: 12px;
+}
+.chat-replybar.hidden { display: none; }
+.crb-label { font-weight: 800; color: var(--a-text); font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; }
+.crb-who { font-weight: 800; color: var(--text); white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.crb-text { color: var(--muted); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.crb-x { background: none; border: none; color: var(--faint); cursor: pointer; font-size: 13px; }
+.crb-x:hover { color: var(--danger); }
+
+.cm-reply {
+    background: var(--surface-3); border-left: 2px solid var(--a1);
+    border-radius: 7px; padding: 5px 9px; margin: 2px 0 5px; cursor: pointer;
+    font-size: 11.5px;
+}
+.cm-reply-who { font-weight: 800; color: var(--a-text); margin-right: 6px; }
+.cm-reply-text { color: var(--muted); }
+.cm-reply-btn {
+    margin-left: auto; background: none; border: none; color: var(--faint);
+    cursor: pointer; padding: 2px; display: inline-flex; align-items: center;
+    opacity: 0; transition: opacity .12s ease;
+}
+.chat-msg:hover .cm-reply-btn { opacity: 1; }
+.cm-reply-btn .ic { width: 13px; height: 13px; }
+.cm-reply-btn:hover { color: var(--a-text); }
+
+/* ————— Lampiran ————— */
+.chat-attach {
+    display: flex; align-items: center; gap: 8px; padding: 7px 12px;
+    background: var(--surface-2); border-top: 1px solid var(--border);
+    font-size: 12px;
+}
+.chat-attach.hidden { display: none; }
+#chat-attach-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.cm-attach { margin: 5px 0; }
+.cm-img img { max-width: 100%; max-height: 220px; border-radius: 10px; cursor: zoom-in; display: block; border: 1px solid var(--border-strong); }
+.cm-attach video { max-width: 100%; max-height: 260px; border-radius: 10px; }
+.cm-attach audio { width: 100%; max-width: 280px; height: 38px; }
+.cm-file a {
+    display: flex; align-items: center; gap: 8px; text-decoration: none;
+    background: var(--surface-3); border: 1px solid var(--border-strong);
+    border-radius: 9px; padding: 8px 12px; color: var(--text); font-size: 12.5px;
+}
+.cm-file a:hover { border-color: rgba(99,102,241,.5); }
+.cm-file-name { word-break: break-all; }
 
 /* ---------- Manga ---------- */
 .manga-grid { display: grid; gap: 13px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }

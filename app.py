@@ -40,6 +40,7 @@ import zipfile
 import logging
 import html as html_mod
 import subprocess
+import tempfile
 
 import requests
 import yt_dlp
@@ -208,6 +209,17 @@ def db_init():
             created REAL
         );
         ''')
+        # Migrasi ringan: kolom baru untuk chat (reply & attachment).
+        # CREATE TABLE IF NOT EXISTS tidak menambah kolom → cek & ALTER manual.
+        cols = {r[1] for r in c.execute("PRAGMA table_info(chat)").fetchall()}
+        for col, ddl in (
+            ('parent_id', 'INTEGER DEFAULT 0'),
+            ('attach_type', 'TEXT'),
+            ('attach_name', 'TEXT'),
+            ('attach_url', 'TEXT'),
+        ):
+            if col not in cols:
+                c.execute("ALTER TABLE chat ADD COLUMN %s %s" % (col, ddl))
         c.commit()
 
 
@@ -4110,9 +4122,18 @@ def api_chat_get():
     except ValueError:
         pass
     rows = db_query(
-        "SELECT id, username, message, created FROM chat WHERE id>? ORDER BY id ASC LIMIT 200",
+        "SELECT id, username, message, parent_id, attach_type, attach_name, attach_url, created "
+        "FROM chat WHERE id>? ORDER BY id ASC LIMIT 300",
         (since,))
-    return jsonify({'ok': True, 'messages': [dict(r) for r in rows]})
+    out = []
+    for r in rows:
+        d = dict(r)
+        # sertakan pesan yang dibalas (quote)
+        if d.get('parent_id'):
+            pr = db_query("SELECT username, message FROM chat WHERE id=?", (d['parent_id'],))
+            d['reply_to'] = {'username': pr[0]['username'], 'message': pr[0]['message']} if pr else None
+        out.append(d)
+    return jsonify({'ok': True, 'messages': out})
 
 
 @app.route('/api/chat', methods=['POST'])
@@ -4120,16 +4141,87 @@ def api_chat_post():
     user = _auth_from_request()
     d = request.get_json(silent=True) or {}
     msg = (d.get('message') or '').strip()[:500]
-    if not msg:
+    attach_url = (d.get('attach_url') or '').strip()
+    attach_type = (d.get('attach_type') or '').strip()[:20]
+    attach_name = (d.get('attach_name') or '').strip()[:200]
+    parent_id = 0
+    try:
+        parent_id = int(d.get('parent_id') or 0)
+    except (TypeError, ValueError):
+        parent_id = 0
+    if not msg and not attach_url:
         return jsonify({'error': 'Pesan kosong.'}), 400
     username = get_username(user)
     if not user:
-        # tamu tanpa akun → tetap boleh, label "Tamu"
         username = 'Tamu'
-    # anti-spam: maks 1 pesan / 2 detik per sesi
-    db_exec("INSERT INTO chat (user_id, username, message, created) VALUES (?,?,?,?)",
-            (user['id'] if user else None, username, msg, time.time()))
+    db_exec("INSERT INTO chat (user_id, username, message, parent_id, attach_type, attach_name, attach_url, created) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (user['id'] if user else None, username, msg, parent_id,
+             attach_type, attach_name, attach_url, time.time()))
     return jsonify({'ok': True, 'username': username})
+
+
+# Folder lampiran chat — ikut DATA_DIR supaya tidak hilang saat redeploy
+CHAT_UPLOAD_DIR = os.path.join(_DATA_DIR, 'chat_uploads')
+try:
+    os.makedirs(CHAT_UPLOAD_DIR, exist_ok=True)
+except Exception:
+    CHAT_UPLOAD_DIR = os.path.join(tempfile.gettempdir(), 'kd_chat_uploads')
+    os.makedirs(CHAT_UPLOAD_DIR, exist_ok=True)
+
+CHAT_ALLOWED_EXT = {
+    'jpg': 'image', 'jpeg': 'image', 'png': 'image', 'gif': 'image', 'webp': 'image',
+    'mp4': 'video', 'webm': 'video', 'mov': 'video', 'm4v': 'video',
+    'mp3': 'audio', 'm4a': 'audio', 'wav': 'audio', 'ogg': 'audio',
+    'pdf': 'file', 'txt': 'file', 'zip': 'file', 'docx': 'file', 'xlsx': 'file',
+    'pptx': 'file', 'md': 'file', 'csv': 'file',
+}
+CHAT_MAX_BYTES = 25 * 1024 * 1024   # 25 MB
+
+
+@app.route('/api/chat/upload', methods=['POST'])
+def api_chat_upload():
+    user = _auth_from_request()
+    if not user:
+        return jsonify({'error': 'Login dulu untuk mengirim lampiran.'}), 401
+    if 'file' not in request.files:
+        return jsonify({'error': 'Tidak ada file.'}), 400
+    f = request.files['file']
+    orig = (f.filename or 'file')
+    ext = orig.rsplit('.', 1)[-1].lower() if '.' in orig else ''
+    if ext not in CHAT_ALLOWED_EXT:
+        return jsonify({'error': 'Jenis file tidak didukung.'}), 400
+    data = f.read(CHAT_MAX_BYTES + 1)
+    if len(data) > CHAT_MAX_BYTES:
+        return jsonify({'error': 'File terlalu besar (maks 25 MB).'}), 400
+    if not data:
+        return jsonify({'error': 'File kosong.'}), 400
+    name = secrets.token_hex(12) + '.' + ext
+    path = os.path.join(CHAT_UPLOAD_DIR, name)
+    with open(path, 'wb') as fh:
+        fh.write(data)
+    return jsonify({'ok': True, 'url': '/api/chat-file/' + name,
+                    'type': CHAT_ALLOWED_EXT[ext], 'name': orig})
+
+
+@app.route('/api/chat-file/<name>')
+def api_chat_file(name):
+    name = re.sub(r'[^0-9A-Za-z._-]', '', name or '')
+    path = os.path.join(CHAT_UPLOAD_DIR, name)
+    if not os.path.exists(path):
+        return jsonify({'error': 'File tidak ditemukan.'}), 404
+    ext = name.rsplit('.', 1)[-1].lower()
+    ctype = {
+        'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png', 'gif': 'image/gif',
+        'webp': 'image/webp', 'mp4': 'video/mp4', 'webm': 'video/webm', 'mov': 'video/quicktime',
+        'mp3': 'audio/mpeg', 'm4a': 'audio/mp4', 'wav': 'audio/wav', 'ogg': 'audio/ogg',
+        'pdf': 'application/pdf', 'zip': 'application/zip',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'txt': 'text/plain', 'md': 'text/markdown', 'csv': 'text/csv',
+    }.get(ext, 'application/octet-stream')
+    return send_file(path, mimetype=ctype, conditional=True, max_age=3600)
 
 
 # ============================================================================

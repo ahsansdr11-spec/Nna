@@ -172,3 +172,31 @@ Douyin, Rutube**.
 
 Ada halaman "Lapor Bug / Feedback" di tab **Cara Pakai** — tulis kendala/fitur,
 laporan masuk ke daftar feedback global (tersimpan di database, aman di volume).
+
+## 💸 Trial Railway habis? Cara tetap publikasi (gratis & murah)
+
+Railway menawarkan trial sementara; kalau habis, beberapa pilihan:
+
+1. **Railway (bayar, paling mudah)** — upgrade ke plan berbayar (mulai ~$5/bln).
+   Data di volume `/data` tetap aman — tidak perlu konfigurasi ulang apa pun.
+
+2. **Render (gratis)** — deploy ulang dari repo GitHub yang sama:
+   - Buat akun di render.com → **New → Web Service** → pilih repo `Nna`.
+   - Build command: `pip install -r requirements.txt`
+   - Start command: `gunicorn --bind 0.0.0.0:${PORT:-10000} --timeout 120 --workers 1 --threads 8 app:app`
+   - Tambah **Persistent Disk** (mount path `/data`) + env `DATA_DIR=/data`
+     → akun/chat/riwayat tidak hilang saat redeploy.
+   - Gratis (spin-down saat tidak dipakai, nyala lagi otomatis saat dikunjungi).
+
+3. **Fly.io (gratis tier kecil)** — deploy dengan `flyctl`, pakai volume `fly volume`.
+
+4. **Hosting sendiri / VPS murah** — VPS Rp20–50rb/bln (Contabo, DigitalOcean,
+   dll): pasang Python + ffmpeg, jalankan `gunicorn`, dan ganti domain di sana.
+   Ini paling fleksibel & data 100% milikmu.
+
+5. **Dari rumah / Termux** — app bisa jalan di HP-mu sendiri (lihat TERMUX.md);
+   bisa diakses teman lewat Wi-Fi/LAN, atau pakai tunnel (Cloudflare Tunnel /
+   Tailscale Funnel) untuk akses publik tanpa server.
+
+> Ganti host TIDAK menghapus data selama database ada di volume/DATA_DIR
+> (atau kamu salin file `data.db` + folder `chat_uploads` dari volume lama).

@@ -2,7 +2,7 @@
 
 // Nomor versi UI (build). NAIKKAN 1 tiap rombak frontend — tampil di footer
 // supaya bisa dicek tanpa buka inspect element. Kunci dari "cara ngecek bump".
-const UI_VERSION = 42;
+const UI_VERSION = 43;
 
 const $ = (s) => document.querySelector(s);
 
@@ -2519,6 +2519,37 @@ function newsSearchEnter() {
 let _chatSince = 0;
 let _chatTimer = null;
 
+let _chatReplyId = 0;
+let _chatReplyWho = '';
+let _chatReplyText = '';
+let _chatAttach = null;   // {url, type, name}
+
+function chatAttachmentHtml(m) {
+    // Lampiran: gambar inline / video player / file link
+    if (!m.attach_url) return '';
+    const t = m.attach_type || 'file';
+    const nm = m.attach_name || 'file';
+    if (t === 'image') {
+        return `<div class="cm-attach cm-img"><img src="${esc(m.attach_url)}" loading="lazy" alt="${esc(nm)}" onclick="window.open('${esc(m.attach_url)}','_blank')"></div>`;
+    }
+    if (t === 'video') {
+        return `<div class="cm-attach"><video src="${esc(m.attach_url)}" controls preload="metadata"></video></div>`;
+    }
+    if (t === 'audio') {
+        return `<div class="cm-attach"><audio src="${esc(m.attach_url)}" controls preload="metadata"></audio></div>`;
+    }
+    return `<div class="cm-attach cm-file"><a href="${esc(m.attach_url)}" target="_blank" rel="noopener">
+        <span class="cm-file-ic">📄</span><span class="cm-file-name">${esc(nm)}</span></a></div>`;
+}
+
+function chatReplyHtml(m) {
+    if (!m.reply_to) return '';
+    return `<div class="cm-reply" onclick="chatReplyTo(${esc(m.id)}, '${esc((m.reply_to.username || '').replace(/'/g, '\\\''))}', '${esc((m.reply_to.message || '').slice(0, 80).replace(/'/g, '\\\''))}')">
+        <span class="cm-reply-who">${esc(m.reply_to.username)}</span>
+        <span class="cm-reply-text">${esc(m.reply_to.message || '')}</span>
+    </div>`;
+}
+
 async function chatLoad() {
     try {
         const d = await fetchJSON('/api/chat?since=' + _chatSince);
@@ -2531,11 +2562,17 @@ async function chatLoad() {
                 const own = m.username === _authUser && _authUser;
                 const div = document.createElement('div');
                 div.className = 'chat-msg' + (own ? ' own' : '');
+                div.dataset.id = m.id;
                 div.innerHTML = `<div class="cm-head">
                         <span class="cm-user">${esc(m.username)}</span>
                         <span class="cm-time">${new Date(m.created * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
+                        <button class="cm-reply-btn" onclick="chatReplyTo(${esc(m.id)}, '${esc(m.username.replace(/'/g, '\\\''))}', '${esc((m.message || '').slice(0, 80).replace(/'/g, '\\\''))}')" title="Balas" aria-label="Balas">
+                            <svg viewBox="0 0 24 24" class="ic"><path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z"/></svg>
+                        </button>
                     </div>
-                    <div class="cm-text">${esc(m.message)}</div>`;
+                    ${chatReplyHtml(m)}
+                    ${chatAttachmentHtml(m)}
+                    <div class="cm-text">${esc(m.message || '')}</div>`;
                 list.appendChild(div);
             }
             list.scrollTop = list.scrollHeight;
@@ -2543,21 +2580,82 @@ async function chatLoad() {
     } catch (e) { /* abaikan */ }
 }
 
+function chatReplyTo(id, who, text) {
+    _chatReplyId = id;
+    _chatReplyWho = who;
+    _chatReplyText = text || '';
+    const bar = document.getElementById('chat-replybar');
+    bar.classList.remove('hidden');
+    document.getElementById('chat-reply-who').textContent = who;
+    document.getElementById('chat-reply-text').textContent = _chatReplyText || '(pesan)';
+}
+
+function chatCancelReply() {
+    _chatReplyId = 0;
+    _chatReplyWho = '';
+    _chatReplyText = '';
+    document.getElementById('chat-replybar').classList.add('hidden');
+}
+
+function chatPickFile() {
+    if (!_authToken) { toast('Login dulu untuk kirim lampiran.', true); return; }
+    document.getElementById('chat-file-input').click();
+}
+
+function chatClearAttach() {
+    _chatAttach = null;
+    document.getElementById('chat-attach').classList.add('hidden');
+    document.getElementById('chat-file-input').value = '';
+}
+
 async function chatSend() {
     const input = document.getElementById('chat-input');
     const msg = (input.value || '').trim();
-    if (!msg) return;
+    if (!msg && !_chatAttach) return;
     try {
+        const body = { message: msg };
+        if (_chatReplyId) body.parent_id = _chatReplyId;
+        if (_chatAttach) {
+            body.attach_url = _chatAttach.url;
+            body.attach_type = _chatAttach.type;
+            body.attach_name = _chatAttach.name;
+        }
         await fetchJSON('/api/chat', {
             method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ message: msg }),
+            body: JSON.stringify(body),
         });
         input.value = '';
+        chatCancelReply();
+        chatClearAttach();
         chatLoad();
     } catch (e) {
         toast(e.message, true);
     }
 }
+
+/* ————— upload lampiran chat ————— */
+(function setupChatUpload() {
+    const fi = document.getElementById('chat-file-input');
+    if (!fi) return;
+    fi.addEventListener('change', async () => {
+        const f = fi.files && fi.files[0];
+        if (!f) return;
+        if (f.size > 25 * 1024 * 1024) { toast('File terlalu besar (maks 25 MB).', true); fi.value = ''; return; }
+        const fd = new FormData();
+        fd.append('file', f);
+        try {
+            const d = await fetchJSON('/api/chat/upload', { method: 'POST', body: fd });
+            _chatAttach = { url: d.url, type: d.type, name: d.name };
+            const bar = document.getElementById('chat-attach');
+            bar.classList.remove('hidden');
+            document.getElementById('chat-attach-name').textContent = d.name + (d.type === 'image' ? ' 🖼️' : d.type === 'video' ? ' 🎬' : ' 📎');
+            toast('Lampiran siap dikirim');
+        } catch (e) {
+            toast(e.message, true);
+            fi.value = '';
+        }
+    });
+})();
 
 /* ---------- Boot ---------- */
 init();

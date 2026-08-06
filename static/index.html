@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=42">
+    <link rel="stylesheet" href="/static/style.css?v=43">
 </head>
 <body>
 
@@ -159,6 +159,25 @@
                 <div class="plat-req-list" id="plat-req-list" style="margin-top:12px"></div>
             </div>
 
+            <!-- Lapor Bug / Feedback (pindah dari Cara Pakai) -->
+            <div class="card mb-3 home-fb" style="margin-top:18px">
+                <div class="card-head">
+                    <span class="card-ic grad-ic">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M12 2a7 7 0 00-4 12.7V17a1 1 0 002 0v-1.3A7 7 0 0012 2zm0 3a4 4 0 100 8 4 4 0 000-8zM7 21a1 1 0 100 2h10a1 1 0 100-2H7z"/></svg>
+                    </span>
+                    <h3 class="card-title">Lapor Bug / Feedback</h3>
+                </div>
+                <p class="muted">Ada yang rusak, aneh, atau mau minta fitur? Tulis di sini — laporan masuk ke kotak feedback semua pengguna.</p>
+                <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+                    <textarea id="fb-msg" rows="3" maxlength="2000" placeholder="Contoh: tombol putar di tab Musik tidak berbunyi…" style="width:100%;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;padding:11px 13px;color:var(--text);font-family:var(--font-body);font-size:13.5px;outline:none;resize:vertical"></textarea>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                        <button class="btn primary" onclick="submitFeedback()">Kirim Laporan</button>
+                        <span class="muted" style="font-size:11px" id="fb-status"></span>
+                    </div>
+                </div>
+                <div class="fb-list" id="fb-list" style="margin-top:14px"></div>
+            </div>
+
             <!-- Hasil analisis -->
             <div id="info-card" class="info-card hidden"></div>
             <div id="progress-card" class="progress-card hidden"></div>
@@ -251,11 +270,25 @@
                     <svg viewBox="0 0 24 24" class="ic"><path d="M21 12a8 8 0 01-8 8H4l2-3a8 8 0 1115-5z"/></svg>
                     Chat global — semua pengguna
                 </span>
-                <p class="muted" style="font-size:12.5px">Ngobrol dengan pengguna lain di server. Hormati satu sama lain ya!</p>
+                <p class="muted" style="font-size:12.5px">Ngobrol dengan pengguna lain di server. Kirim teks, gambar, video, atau file — dan balas pesan. Hormati satu sama lain ya!</p>
             </div>
             <div class="chat-box">
                 <div class="chat-list" id="chat-list"></div>
+                <div class="chat-replybar hidden" id="chat-replybar">
+                    <span class="crb-label">Membalas</span>
+                    <span class="crb-who" id="chat-reply-who">–</span>
+                    <span class="crb-text" id="chat-reply-text">–</span>
+                    <button class="crb-x" onclick="chatCancelReply()" title="Batal" aria-label="Batal balas">✕</button>
+                </div>
+                <div class="chat-attach hidden" id="chat-attach">
+                    <span id="chat-attach-name">–</span>
+                    <button class="crb-x" onclick="chatClearAttach()" title="Hapus lampiran" aria-label="Hapus lampiran">✕</button>
+                </div>
                 <div class="chat-input-row">
+                    <button id="chat-attach-btn" class="btn ghost chat-paperclip" onclick="chatPickFile()" title="Lampirkan file/gambar/video" aria-label="Lampirkan">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                    </button>
+                    <input type="file" id="chat-file-input" class="hidden" accept="image/*,video/*,audio/*,.pdf,.zip,.txt,.md,.csv,.docx,.xlsx,.pptx">
                     <input type="text" id="chat-input" placeholder="Tulis pesan…" autocomplete="off" enterkeyhint="send" maxlength="500">
                     <button id="chat-send" class="btn primary" onclick="chatSend()">
                         <svg viewBox="0 0 24 24" class="ic"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
@@ -281,25 +314,6 @@
                 </div>
                 <div id="history-box" class="muted">Login untuk melihat riwayat download-mu.</div>
             </div>
-
-            <div class="card mb-3">
-                <div class="card-head">
-                    <span class="card-ic grad-ic">
-                        <svg viewBox="0 0 24 24" class="ic"><path d="M12 2a7 7 0 00-4 12.7V17a1 1 0 002 0v-1.3A7 7 0 0012 2zm0 3a4 4 0 100 8 4 4 0 000-8zM7 21a1 1 0 100 2h10a1 1 0 100-2H7z"/></svg>
-                    </span>
-                    <h3 class="card-title">Lapor Bug / Feedback</h3>
-                </div>
-                <p class="muted">Ada yang rusak, aneh, atau mau minta fitur? Tulis di sini — laporan masuk ke kotak feedback semua pengguna.</p>
-                <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
-                    <textarea id="fb-msg" rows="3" maxlength="2000" placeholder="Contoh: tombol putar di tab Musik tidak berbunyi…" style="width:100%;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;padding:11px 13px;color:var(--text);font-family:var(--font-body);font-size:13.5px;outline:none;resize:vertical"></textarea>
-                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                        <button class="btn primary" onclick="submitFeedback()">Kirim Laporan</button>
-                        <span class="muted" style="font-size:11px" id="fb-status"></span>
-                    </div>
-                </div>
-                <div class="fb-list" id="fb-list" style="margin-top:14px"></div>
-            </div>
-
 
             <div class="card mb-3">
                 <div class="card-head">
@@ -479,6 +493,6 @@
     <!-- ================= TOAST ================= -->
     <div id="toast" class="toast"></div>
 
-    <script src="/static/app.js?v=42"></script>
+    <script src="/static/app.js?v=43"></script>
 </body>
 </html>

@@ -255,3 +255,19 @@ Kode otomatis memakai `DATA_DIR` kalau di-set; kalau tidak, pakai `data.db` bias
 5. Tunggu 5–30 menit → HTTPS otomatis oleh Railway.
 
 Ganti domain tidak menghapus akun/data (data di volume `DATA_DIR`).
+
+
+---
+
+## 💸 Trial Railway habis? Tetap publikasi
+
+1. **Railway berbayar** (paling mudah) — upgrade plan; data di volume `/data` aman.
+2. **Render (gratis)** — deploy repo yang sama:
+   - New Web Service → repo `Nna`
+   - Build: `pip install -r requirements.txt`
+   - Start: `gunicorn --bind 0.0.0.0:${PORT:-10000} --timeout 120 --workers 1 --threads 8 app:app`
+   - Tambah **Persistent Disk** mount `/data` + env `DATA_DIR=/data`.
+3. **VPS murah** — pasang Python+ffmpeg, jalankan gunicorn, arahkan domain.
+4. **Termux + Cloudflare Tunnel** — jalankan di HP, buka publik gratis lewat tunnel.
+
+Ganti host tidak menghapus data selama database di volume (`data.db` + `chat_uploads`).
