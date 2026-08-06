@@ -385,7 +385,7 @@ PLATFORM_IE_KEYS = {
     'dailymotion':    ['Dailymotion'],
     'soundcloud':     ['Soundcloud'],
     'archiveorg':     ['ArchiveOrg'],
-    'twitch':         ['Twitch', 'TwitchClips'],
+    'twitch':         ['TwitchVod', 'TwitchClips'],
     'bandcamp':       ['Bandcamp'],
     'mixcloud':       ['Mixcloud'],
     'streamable':     ['Streamable'],
@@ -1554,6 +1554,21 @@ def probe_direct_media(url):
     raise RuntimeError('URL bukan file media langsung.')
 
 
+def meta_get(url, **kwargs):
+    """GET dengan impersonasi TLS Chrome (curl_cffi) untuk situs Meta
+    (Instagram/Facebook/Threads) — WAF Meta mem-fingerprint TLS handshake,
+    jadi requests polos lebih gampang diblokir/dilempar ke login wall
+    walau header User-Agent sudah benar. Fallback ke requests biasa kalau
+    curl_cffi tidak tersedia/gagal."""
+    kwargs.setdefault('headers', BROWSER_HEADERS)
+    kwargs.setdefault('timeout', 20)
+    try:
+        from curl_cffi import requests as creq
+        return creq.get(url, impersonate='chrome124', **kwargs)
+    except Exception:
+        return requests.get(url, **kwargs)
+
+
 def extract_instagram_embed(url):
     """Instagram TANPA login: halaman embed publik (/p/CODE/embed/captioned/)
     memuat URL CDN foto asli (scontent*.cdninstagram.com). Dipakai saat
@@ -1570,7 +1585,7 @@ def extract_instagram_embed(url):
                    f'https://www.instagram.com/p/{code}/embed/',
                    f'https://www.instagram.com/reel/{code}/embed/'):
             try:
-                r = requests.get(ep, headers=BROWSER_HEADERS, timeout=20)
+                r = meta_get(ep)
                 if r.status_code == 200 and 'scontent' in r.text:
                     page = r.text
                     break
@@ -1642,7 +1657,7 @@ def extract_facebook_embed(url):
     try:
         # 1) resolve tautan share/redirect → URL panjang (posts/photo)
         try:
-            rr = requests.get(url, headers=BROWSER_HEADERS, timeout=20, allow_redirects=True)
+            rr = meta_get(url, allow_redirects=True)
             if rr.status_code == 200:
                 url = rr.url
         except Exception:
@@ -1650,7 +1665,7 @@ def extract_facebook_embed(url):
 
         # 2) coba plugin post
         ep = 'https://www.facebook.com/plugins/post.php?href=' + requests.utils.quote(url, safe='') + '&show_text=true'
-        r = requests.get(ep, headers=BROWSER_HEADERS, timeout=20)
+        r = meta_get(ep)
         if r.status_code != 200:
             raise RuntimeError(f'Facebook plugin post menolak (HTTP {r.status_code}).')
         html = r.text
@@ -1705,9 +1720,8 @@ def extract_instagram_media_direct(url):
     if not m:
         raise RuntimeError('URL Instagram tidak dikenali.')
     code = m.group(1)
-    r = requests.get(f'https://www.instagram.com/p/{code}/media/?size=l',
-                     headers=BROWSER_HEADERS, timeout=20,
-                     allow_redirects=True, stream=True)
+    r = meta_get(f'https://www.instagram.com/p/{code}/media/?size=l',
+                allow_redirects=True, stream=True)
     try:
         ctype = (r.headers.get('Content-Type') or '').split(';')[0].strip().lower()
         if r.status_code == 200 and ctype.startswith('image/'):
@@ -2650,9 +2664,13 @@ def extract_douyin(url):
                 return {'ok': True, **parsed}
     except Exception:
         pass
-    # coba tanpa cookies (extractor bisa jalan dari IP bagus)
+    # coba tanpa cookies (extractor bisa jalan dari IP bagus) — HARUS pakai
+    # opts baru tanpa http_cookies, kalau tidak percobaan ini identik dengan
+    # yang pertama (bug lama: opts lama masih membawa cookies dari attempt 1)
+    opts_no_cookies = dict(opts)
+    opts_no_cookies.pop('http_cookies', None)
     try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
+        with yt_dlp.YoutubeDL(opts_no_cookies) as ydl:
             info = ydl.extract_info(url, download=False)
         if info and info.get('formats'):
             parsed = parse_info(info)
