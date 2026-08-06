@@ -7,7 +7,6 @@ const UI_VERSION = 46;
 const $ = (s) => document.querySelector(s);
 
 let currentInfo = null;
-let pollTimer = null;
 let resSel = '1080';   // resolusi terpilih (default 1080p)
 let dlStart = 0;       // waktu mulai download (untuk timer menit:detik)
 let metaTimer = null;   // timer saat menunggu metadata
@@ -751,15 +750,17 @@ async function beginDownload(mode, formatId) {
 }
 
 async function pollJobInto(jobId, selector) {
-    clearInterval(pollTimer);
     registerPoll(jobId);
     const box0 = document.querySelector(selector);
     if (!box0) { unregisterPoll(jobId); return; }
     box0.dataset.jobId = jobId;
     let fails = 0;
-    pollTimer = setInterval(async () => {
+    // Timer LOKAL per panggilan (bukan variabel global) — supaya beberapa
+    // download yang berjalan bersamaan (home, galeri, musik) tidak saling
+    // meng-clearInterval punya proses lain dan "macet" sampai di-refresh.
+    let timer = setInterval(async () => {
         const box = document.querySelector(selector);
-        if (!box || box.classList.contains('hidden')) { clearInterval(pollTimer); unregisterPoll(jobId); return; }
+        if (!box || box.classList.contains('hidden')) { clearInterval(timer); unregisterPoll(jobId); return; }
         try {
             const j = await fetchJSON('/api/job/' + jobId);
             fails = 0;
@@ -781,7 +782,7 @@ async function pollJobInto(jobId, selector) {
             if (timeEl) timeEl.textContent = fmtDur((Date.now() - dlStart) / 1000);
 
             if (j.status === 'done') {
-                clearInterval(pollTimer);
+                clearInterval(timer);
                 unregisterPoll(jobId);
                 const totalT = fmtDur((Date.now() - dlStart) / 1000);
                 if (fillEl) fillEl.style.width = '100%';
@@ -793,7 +794,7 @@ async function pollJobInto(jobId, selector) {
                     ? 'MP3 siap diunduh! (' + totalT + ')'
                     : 'Download selesai dalam ' + totalT + '! Klik Simpan file.');
             } else if (j.status === 'error') {
-                clearInterval(pollTimer);
+                clearInterval(timer);
                 unregisterPoll(jobId);
                 toast('Ups, download gagal', true);
                 box.innerHTML = `
@@ -807,7 +808,7 @@ async function pollJobInto(jobId, selector) {
             // refresh"). Lewati siklus; kalau gagal terus-menerus baru berhenti.
             fails++;
             if (fails >= 8) {
-                clearInterval(pollTimer);
+                clearInterval(timer);
                 unregisterPoll(jobId);
                 toast('Koneksi ke server terputus sesaat. Muat ulang halaman untuk melihat status.', true);
             }
@@ -1203,17 +1204,18 @@ function musicQueueNext() {
 }
 
 function pollMusicQueue(jobId, title) {
-    clearInterval(pollTimer);
     registerPoll(jobId);
     const box0 = $('#music-progress');
     if (box0) box0.dataset.jobId = jobId;
     let fails = 0;
-    pollTimer = setInterval(async () => {
+    // Timer LOKAL per lagu (bukan variabel global) — supaya antrean musik
+    // tidak saling meng-clearInterval punya proses lain.
+    let timer = setInterval(async () => {
         try {
             const j = await fetchJSON('/api/job/' + jobId);
             fails = 0;
             const box = $('#music-progress');
-            if (!box || box.classList.contains('hidden')) { clearInterval(pollTimer); unregisterPoll(jobId); musicQueueNext(); return; }
+            if (!box || box.classList.contains('hidden')) { clearInterval(timer); unregisterPoll(jobId); musicQueueNext(); return; }
             const map = { downloading: 'Mengunduh…', processing: 'Memproses…', done: 'Selesai', error: 'Gagal', queued: 'Antre' };
             box.querySelector('#progress-status').textContent = map[j.status] || j.status;
             box.querySelector('#progress-msg').textContent = j.message || '';
@@ -1228,13 +1230,13 @@ function pollMusicQueue(jobId, title) {
                 etaEl3.textContent = m ? 'Perkiraan selesai: ' + m[1] : '';
             }
             if (j.status === 'done') {
-                clearInterval(pollTimer);
+                clearInterval(timer);
                 unregisterPoll(jobId);
                 window._dlDone.push({ jobId: jobId, title: title, filename: j.filename });
                 box.remove();
                 musicQueueNext();
             } else if (j.status === 'error') {
-                clearInterval(pollTimer);
+                clearInterval(timer);
                 unregisterPoll(jobId);
                 box.remove();
                 toast('Satu lagu gagal: ' + (j.error || '').slice(0, 120), true);
@@ -1244,7 +1246,7 @@ function pollMusicQueue(jobId, title) {
             // Gagal sesaat jangan memutus antrean — lewati siklus ini saja.
             fails++;
             if (fails >= 8) {
-                clearInterval(pollTimer);
+                clearInterval(timer);
                 unregisterPoll(jobId);
                 const box = $('#music-progress');
                 if (box) box.remove();
