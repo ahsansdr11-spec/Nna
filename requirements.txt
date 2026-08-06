@@ -7,3 +7,4 @@ ytmusicapi>=1.12.0
 gallery-dl>=1.32.0
 yt-dlp-ejs>=0.8.0   # skrip JS solver challenge utk PO token lokal (dipakai bareng runtime deno) — tanpa cookie
 xhshow>=0.1.0        # tanda tangan x-s/x-t/x-rap-param RedNote (pure Python)
+yt-dlp-get-pot @ git+https://github.com/yt-dlp/yt-dlp-get-pot.git   # POT provider bgutil (cadangan) — Railway bisa build dari GitHub

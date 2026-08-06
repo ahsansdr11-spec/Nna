@@ -200,3 +200,31 @@ Railway menawarkan trial sementara; kalau habis, beberapa pilihan:
 
 > Ganti host TIDAK menghapus data selama database ada di volume/DATA_DIR
 > (atau kamu salin file `data.db` + folder `chat_uploads` dari volume lama).
+
+## 🛡️ Strategi anti-blokir YouTube (berlapis maksimal)
+
+YouTube memblokir IP datacenter (Railway/Render) secara berkala. Aplikasi ini
+menggunakan pertahanan berlapis:
+
+1. **Rotasi 14 client** — `android_vr` → `web_embedded` → `tv_downgraded` →
+   `tv_simply` → `web_music` → `android_music` → `ios_music` → `web_safari` →
+   `android` → `mweb` → `ios` → `tv_embedded` → `tv` → default.
+2. **PO Token (POT)** — plugin lokal `yt_dlp_plugins/getpot.py` mencoba beberapa
+   endpoint publik (`bgutil`, `pot.yt-dlp.cyou`, dll) untuk mendapat PO token +
+   visitor data, sehingga client `web_embedded`/`tv` bisa lolos challenge
+   "Sign in to confirm". Provider bgutil resmi (`yt-dlp-get-pot`) dipasang juga
+   sebagai cadangan saat build Railway.
+3. **Fallback Piped/Invidious** — kalau semua client yt-dlp gagal, aplikasi
+   mencoba mengambil stream dari instance publik (Piped → Invidious) — request
+   pergi ke instance, bukan ke YouTube, jadi lolos blokir IP server.
+4. **Dedupe job** — dua klik download video yang sama TIDAK membuat download
+   ganda (penyebab umum rate-limit & kegagalan diam-diam).
+5. **Cooldown countdown** — kalau YouTube memaksa jeda, kartu menampilkan
+   "Menunggu jeda anti-bot (N detik)".
+6. **Pesan jujur** — kalau semua lapisan gagal (IP diblokir total), muncul
+   penjelasan + saran, bukan error mentah.
+
+> Catatan jujur: YouTube sewaktu-waktu bisa memblokir total sebuah IP datacenter
+> untuk download (rate-limit). Tidak ada kode yang 100% menembus itu — tapi
+> dengan lapisan di atas, peluang berhasil jauh lebih tinggi & kegagalan tidak
+> pernah lagi "diam tanpa pesan".

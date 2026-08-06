@@ -598,8 +598,16 @@ def extract_with_fallback(url, opts, ie_key=None):
         if is_yt_bot_error(e):
             try:
                 return yt_extract_with_retry(url, opts)
-            except Exception as e2:
-                raise e2
+            except Exception:
+                # 1b) FALLBACK Piped/Invidious — ambil dari instance publik
+                if is_youtube(url):
+                    try:
+                        fb = extract_youtube_fallback(url)
+                        if fb and fb.get('formats'):
+                            return fb
+                    except Exception:
+                        pass
+                raise
 
         # 2) Impersonasi bermasalah → coba tanpa impersonate
         if opts.get('impersonate') and ('impersonate' in msg.lower() or 'tls fingerprint' in msg.lower()):
@@ -721,19 +729,29 @@ YT_BOT_HINTS = ('sign in to confirm', 'confirm you', 'not a bot', 'bot check', '
 
 POT_AVAILABLE = False
 try:
-    # plugin yt-dlp-get-pot dimuat via namespace yt_dlp_plugins (getpot.py)
-    import yt_dlp_plugins.extractor.getpot  # noqa: F401
+    # plugin POT lokal (yt_dlp_plugins/getpot.py) — PO Token untuk YouTube
+    import yt_dlp_plugins.getpot  # noqa: F401
     POT_AVAILABLE = True
 except Exception:
+    pass
+if not POT_AVAILABLE:
+    try:
+        # plugin yt-dlp-get-pot (bgutil) kalau terpasang
+        import yt_dlp_plugins.extractor.getpot  # noqa: F401
+        POT_AVAILABLE = True
+    except Exception:
+        pass
+if not POT_AVAILABLE:
     try:
         import pkgutil, yt_dlp_plugins
-        POT_AVAILABLE = any('getpot' in m.name for m in pkgutil.iter_modules(yt_dlp_plugins.__path__))
+        POT_AVAILABLE = any('pot' in m.name.lower() for m in pkgutil.iter_modules(yt_dlp_plugins.__path__))
     except Exception:
         POT_AVAILABLE = False
 
-POT_PROVIDER = 'bgutil-ytdlp-pot-provider'
+# Provider POT: pakai plugin lokal kita dulu; kalau tidak ada, bgutil resmi.
+POT_PROVIDER = 'kd-pot-provider' if POT_AVAILABLE else 'bgutil-ytdlp-pot-provider'
 # Provider POT cadangan yang dicoba kalau provider utama gagal (urutan)
-POT_PROVIDERS = ['bgutil-ytdlp-pot-provider']
+POT_PROVIDERS = ['kd-pot-provider', 'bgutil-ytdlp-pot-provider']
 
 
 def with_player_client(opts, client, pot=False):
@@ -766,8 +784,12 @@ def try_pot_with_backoff(url, opts, want_info=False):
     if not POT_AVAILABLE:
         raise RuntimeError('PO token plugin tidak tersedia')
     last = None
+    # Kombinasi client + POT yang paling sering menembus "Sign in to confirm"
+    # dari IP datacenter. web_embedded & tv adalah yang paling cocok dengan POT.
+    pot_clients = (['web_embedded'], ['tv'], ['tv_embedded'], ['android_vr'],
+                   ['web_music'], ['ios'], ['android'], ['web_safari'], ['mweb'])
     for attempt in range(2):   # 2 percobaan: langsung + backoff
-        for cl in (['android_vr'], ['ios'], ['android'], ['tv']):
+        for cl in pot_clients:
             try:
                 with yt_dlp.YoutubeDL(with_player_client(opts, cl, pot=True)) as ydl:
                     if want_info:
@@ -795,6 +817,129 @@ def is_youtube(url):
     return 'youtube.com' in (url or '') or 'youtu.be' in (url or '')
 
 
+# ============================================================================
+# Fallback Piped/Invidious untuk YouTube — jalur cadangan saat yt-dlp
+# diblokir bot-check dari IP datacenter. Request pergi ke INSTANCE publik,
+# bukan ke YouTube langsung — jadi bisa lolos blokir IP server.
+# ============================================================================
+PIPED_INSTANCES = [
+    'https://pipedapi.kavin.rocks',
+    'https://api.piped.yt',
+    'https://pipedapi.adminforge.de',
+    'https://pipedapi.leptons.xyz',
+    'https://piped-api.lunar.icu',
+    'https://pipedapi.reallyaweso.me',
+]
+INVIDIOUS_INSTANCES = [
+    'https://inv.nadeko.net',
+    'https://invidious.nerdvpn.de',
+    'https://yewtu.be',
+    'https://invidious.f5.si',
+    'https://iv.melmac.space',
+    'https://invidious.privacyredirect.com',
+]
+# Fail-cepat: maks total instance & detik untuk seluruh fallback
+PIPED_MAX_TRIES = 4
+PIPED_TOTAL_TIMEOUT = 30
+
+
+def _yt_id(url):
+    m = re.search(r'(?:v=|shorts/|embed/|youtu\.be/)([0-9A-Za-z_-]{11})', url)
+    return m.group(1) if m else None
+
+
+def _piped_video(vid):
+    """Coba instance Piped → dict format video/audio (fail-cepat)."""
+    import itertools
+    t_end = time.time() + PIPED_TOTAL_TIMEOUT
+    for inst in itertools.islice(PIPED_INSTANCES, PIPED_MAX_TRIES):
+        if time.time() > t_end:
+            break
+        try:
+            r = requests.get(inst.rstrip('/') + '/streams/' + vid,
+                             headers={'User-Agent': 'Mozilla/5.0'}, timeout=8)
+            if r.status_code != 200:
+                continue
+            d = r.json()
+            if not d.get('title'):
+                continue
+            fmts = []
+            # videoStreams: gabungan video+audio, atau video saja
+            for v in (d.get('videoStreams') or []):
+                fmts.append({
+                    'url': v.get('url'), 'format_id': 'piped-v' + str(v.get('itag', '')),
+                    'ext': v.get('container') or 'mp4', 'height': v.get('height'),
+                    'width': v.get('width'), 'vcodec': v.get('encoding') or 'h264',
+                    'acodec': v.get('videoOnly') and 'none' or 'aac',
+                    'tbr': v.get('bitrate'),
+                })
+            for a in (d.get('audioStreams') or []):
+                fmts.append({
+                    'url': a.get('url'), 'format_id': 'piped-a' + str(a.get('itag', '')),
+                    'ext': a.get('container') or 'm4a', 'height': None,
+                    'vcodec': 'none', 'acodec': 'aac', 'tbr': a.get('bitrate'),
+                })
+            thumbs = d.get('thumbnailUrl') or ''
+            return {
+                'id': vid, 'title': d.get('title') or 'Video YouTube',
+                'uploader': d.get('uploader') or 'Unknown',
+                'thumbnail': thumbs if isinstance(thumbs, str) else (thumbs[0] if thumbs else None),
+                'duration': d.get('duration') or None,
+                'webpage_url': 'https://www.youtube.com/watch?v=' + vid,
+                'formats': [f for f in fmts if f.get('url')],
+                'url': None,
+            }
+        except Exception:
+            continue
+    return None
+
+
+def _invidious_video(vid):
+    """Coba instance Invidious → dict format."""
+    for inst in INVIDIOUS_INSTANCES:
+        try:
+            r = requests.get(inst.rstrip('/') + '/api/v1/videos/' + vid,
+                             headers={'User-Agent': 'Mozilla/5.0'}, timeout=12)
+            if r.status_code != 200:
+                continue
+            d = r.json()
+            if not d.get('title'):
+                continue
+            fmts = []
+            for v in (d.get('adaptiveFormats') or []) + (d.get('formatStreams') or []):
+                u = v.get('url')
+                if not u:
+                    continue
+                fmts.append({
+                    'url': u, 'format_id': 'inv-' + str(v.get('itag', '')),
+                    'ext': v.get('container') or v.get('ext') or 'mp4',
+                    'height': v.get('height'), 'width': v.get('width'),
+                    'vcodec': v.get('encoding') or ('none' if v.get('type', '').startswith('audio') else 'h264'),
+                    'acodec': 'aac' if not v.get('encoding') or v.get('type', '').startswith('audio') else 'aac',
+                    'tbr': v.get('bitrate'),
+                })
+            return {
+                'id': vid, 'title': d.get('title') or 'Video YouTube',
+                'uploader': d.get('author') or 'Unknown',
+                'thumbnail': d.get('videoThumbnails') or None,
+                'duration': d.get('lengthSeconds') or None,
+                'webpage_url': 'https://www.youtube.com/watch?v=' + vid,
+                'formats': [f for f in fmts if f.get('url')],
+                'url': None,
+            }
+        except Exception:
+            continue
+    return None
+
+
+def extract_youtube_fallback(url):
+    """Coba Piped → Invidious untuk video YouTube. Kembalikan info dict atau None."""
+    vid = _yt_id(url)
+    if not vid:
+        return None
+    return _piped_video(vid) or _invidious_video(vid)
+
+
 def is_yt_bot_error(exc):
     m = str(exc).lower()
     return any(h in m for h in YT_BOT_HINTS)
@@ -820,9 +965,14 @@ YT_CLIENTS = [
     ['web_embedded'],
     ['tv_downgraded'],
     ['tv_simply'],
+    ['web_music'],
+    ['android_music'],
+    ['ios_music'],
+    ['web_safari'],
     ['android'],
     ['mweb'],
     ['ios'],
+    ['tv_embedded'],
     ['tv'],
     None,                     # default yt-dlp (android_vr / web_safari)
 ]
@@ -857,6 +1007,14 @@ def yt_download_with_retry(url, opts):
                 time.sleep(1.0)
                 continue
             raise
+    # JALUR UTAMA POT: kalau semua client non-POT kena bot-check, PO token
+    # sering menembus (web_embedded/tv + pot). Dicoba SEKARANG, bukan terakhir.
+    if POT_AVAILABLE:
+        try:
+            try_pot_with_backoff(url, opts, want_info=False)
+            return
+        except Exception as e:
+            last = e
     # Last resort: semua client sekaligus (yt-dlp otomatis lewati yang gagal)
     try:
         with yt_dlp.YoutubeDL(with_player_client(opts, YT_CLIENTS_LAST)) as ydl:
@@ -864,13 +1022,6 @@ def yt_download_with_retry(url, opts):
         return
     except Exception as e:
         last = e
-    # Terakhir: PO token kalau plugin tersedia (opsional, best-effort)
-    if POT_AVAILABLE:
-        try:
-            try_pot_with_backoff(url, opts, want_info=False)
-            return
-        except Exception as e:
-            last = e
     raise last
 
 
@@ -894,18 +1045,18 @@ def yt_extract_with_retry(url, opts):
                 time.sleep(1.0)
                 continue
             raise
+    # JALUR UTAMA POT — dicoba sebelum 'all' (paling sering menembus bot-check)
+    if POT_AVAILABLE:
+        try:
+            return try_pot_with_backoff(url, opts, want_info=True)
+        except Exception as e:
+            last = e
     # Last resort: semua client sekaligus (yt-dlp otomatis lewati yang gagal)
     try:
         with yt_dlp.YoutubeDL(with_player_client(opts, YT_CLIENTS_LAST)) as ydl:
             return ydl.extract_info(url, download=False)
     except Exception as e:
         last = e
-    # Terakhir: PO token kalau plugin tersedia (opsional, best-effort)
-    if POT_AVAILABLE:
-        try:
-            return try_pot_with_backoff(url, opts, want_info=True)
-        except Exception as e:
-            last = e
     raise last
 
 
@@ -3058,6 +3209,52 @@ def run_download(job, url, mode, format_id, resolution=DEFAULT_RESOLUTION,
                 if drm_tries >= 2:
                     break
             time.sleep(0.7)
+
+        # FALLBACK Piped/Invidious untuk YouTube: semua client yt-dlp gagal
+        # (bot-check) → coba ambil stream dari instance publik, lalu unduh.
+        if is_youtube(url) and is_yt_bot_error(last_err):
+            try:
+                fb = extract_youtube_fallback(url)
+                if fb and fb.get('formats'):
+                    fmts = [f for f in fb['formats'] if f.get('url')]
+                    if fmts:
+                        # pilih sesuai mode
+                        if mode in ('mp3', 'm4a', 'bestaudio'):
+                            cand = [f for f in fmts if f.get('vcodec') == 'none']
+                            if not cand:
+                                cand = fmts
+                        elif mode == 'vonly':
+                            cand = [f for f in fmts if f.get('acodec') in ('none', None)]
+                            if not cand:
+                                cand = fmts
+                        else:
+                            # best: video+audio gabung atau video saja
+                            cand = [f for f in fmts if f.get('vcodec') not in ('none', None)]
+                            if not cand:
+                                cand = fmts
+                        if cand:
+                            cand.sort(key=lambda f: -(f.get('height') or 0) - (0 if f.get('acodec') not in ('none', None) else 100))
+                            su = cand[0]['url']
+                            o2 = dict(o)
+                            o2.pop('impersonate', None)
+                            o2['format'] = 'best/bestaudio'
+                            o2['http_headers'] = {'User-Agent': USER_AGENT, 'Referer': url}
+                            with yt_dlp.YoutubeDL(o2) as ydl:
+                                ydl.download([su])
+                            fp2 = find_job_file(job_id)
+                            if fp2:
+                                job['filepath'] = fp2
+                                job['status'] = 'done'
+                                job['filename'] = os.path.basename(fp2)
+                                job['filesize_mb'] = mb(os.path.getsize(fp2))
+                                dur2 = probe_duration(fp2)
+                                job['duration'] = round(dur2) if dur2 else None
+                                job['duration_text'] = format_duration(job['duration'])
+                                job['message'] = 'Selesai (via cadangan) dalam ' + elapsed_of(job)
+                                _record_done_history(job)
+                                return
+            except Exception:
+                pass
 
         job['status'] = 'error'
         job['error'] = friendly_error(last_err) if last_err else 'Gagal mengunduh.'
