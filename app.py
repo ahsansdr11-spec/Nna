@@ -220,6 +220,10 @@ def db_init():
         ):
             if col not in cols:
                 c.execute("ALTER TABLE chat ADD COLUMN %s %s" % (col, ddl))
+        # kolom last_seen untuk sessions (statistik online)
+        scol = {r[1] for r in c.execute("PRAGMA table_info(sessions)").fetchall()}
+        if 'last_seen' not in scol:
+            c.execute("ALTER TABLE sessions ADD COLUMN last_seen REAL")
         c.commit()
 
 
@@ -266,11 +270,34 @@ def get_user_by_token(token):
     rows = db_query(
         "SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token=?",
         (token,))
-    return rows[0] if rows else None
+    if rows:
+        # update last_seen → untuk statistik "user online"
+        try:
+            db_exec("UPDATE sessions SET last_seen=? WHERE token=?",
+                    (time.time(), token))
+        except Exception:
+            pass
+        return rows[0]
+    return None
 
 
 def get_username(user):
     return user['username'] if user else 'Tamu'
+
+
+@app.route('/api/stats')
+def api_stats():
+    """Statistik publik: jumlah akun terdaftar & user online (5 menit terakhir)."""
+    try:
+        total = db_query("SELECT COUNT(*) AS n FROM users WHERE is_guest=0")[0]['n']
+        guests = db_query("SELECT COUNT(*) AS n FROM users WHERE is_guest=1")[0]['n']
+        online = db_query(
+            "SELECT COUNT(DISTINCT user_id) AS n FROM sessions WHERE last_seen>?",
+            (time.time() - 5 * 60,))[0]['n']
+    except Exception:
+        total = online = guests = 0
+    return jsonify({'ok': True, 'total_users': total, 'online': online,
+                    'guests': guests})
 
 
 def _auth_from_request():
@@ -2767,6 +2794,7 @@ def run_music_prepare(job, video_id):
         job['filename'] = os.path.basename(fp)
         job['filesize_mb'] = mb(os.path.getsize(fp))
         job['message'] = 'Siap diputar'
+        _record_done_history(job)
         return True
 
     # 1) AAC asli tanpa konversi
@@ -2801,11 +2829,22 @@ def api_music_prepare():
     video_id = (data.get('video_id') or '').strip()
     if not video_id:
         return jsonify({'error': 'ID lagu wajib.'}), 400
+    url = 'https://www.youtube.com/watch?v=' + re.sub(r'[^0-9A-Za-z_-]', '', video_id)
+    dup = find_active_job(url)
+    if dup:
+        return jsonify({'ok': True, 'job_id': dup['id'], 'duplicate': True})
     job = new_job()
     if data.get('title'):
         job['_title'] = str(data['title'])[:120]
     job['_platform'] = 'youtube'
     job['_mode'] = 'stream'
+    job['_url'] = url
+    try:
+        _u = _auth_from_request()
+        if _u:
+            job['_user_id'] = _u['id']
+    except Exception:
+        pass
     t = threading.Thread(target=run_music_prepare, args=(job, video_id), daemon=True)
     t.start()
     return jsonify({'ok': True, 'job_id': job['id']})
@@ -2897,7 +2936,8 @@ def run_download(job, url, mode, format_id, resolution=DEFAULT_RESOLUTION,
             # info jeda anti-bot (kalau ada) supaya UI tidak terlihat diam
             job['message'] = 'Mengunduh…'
             if remaining_platform_cooldown(url) > 0:
-                job['message'] = 'Menunggu jeda anti-bot, harap sabar…'
+                job['message'] = ('Menunggu jeda anti-bot (%ds) — sabar ya…'
+                                  % int(remaining_platform_cooldown(url) + 1))
             if (time.time() - job['_start']) > TOTAL_TIMEOUT:
                 raise RuntimeError('Terlalu lama — coba lagi beberapa menit ya!')
             cleanup_job_files(job_id)
@@ -2986,6 +3026,7 @@ def run_download(job, url, mode, format_id, resolution=DEFAULT_RESOLUTION,
             job['duration'] = round(dur) if dur else None
             job['duration_text'] = format_duration(job['duration'])
             job['message'] = 'Selesai dalam ' + elapsed_of(job)
+            _record_done_history(job)
             return True
         except Exception as e:
             last_err = e
@@ -3349,6 +3390,7 @@ def run_gallery_download(job, url, items=None):
         job['duration'] = None
         job['duration_text'] = ''
         job['message'] = 'Selesai dalam ' + elapsed_of(job)
+        _record_done_history(job)
     except Exception as e:
         job['status'] = 'error'
         job['error'] = friendly_error(e)
@@ -3700,12 +3742,40 @@ def api_gallery_download():
         items = [{'url': it.get('url'), 'ext': it.get('ext', 'jpg')}
                  for it in raw if it.get('url')]
 
+    dup = find_active_job(url)
+    if dup:
+        return jsonify({'ok': True, 'job_id': dup['id'], 'duplicate': True})
     job = new_job()
     if data.get('title'):
         job['_title'] = str(data['title'])[:120]
+    job['_url'] = url
+    try:
+        _u = _auth_from_request()
+        if _u:
+            job['_user_id'] = _u['id']
+    except Exception:
+        pass
     t = threading.Thread(target=run_gallery_download, args=(job, url, items), daemon=True)
     t.start()
     return jsonify({'ok': True, 'job_id': job['id']})
+
+
+def find_active_job(url, mode=None):
+    """Cari job yang SEDANG berjalan untuk URL yang sama (dedupe).
+
+    Mencegah dua download video yang SAMA berjalan bersamaan — penyebab umum
+    YouTube merate-limit & bikin download kedua "diam tanpa hasil". Kalau
+    ditemukan, frontend tinggal memakai job itu (polling lanjut)."""
+    key = (url or '').strip()
+    if not key:
+        return None
+    with JOBS_LOCK:
+        for jid, j in JOBS.items():
+            if j.get('_url') != key:
+                continue
+            if j.get('status') in ('queued', 'downloading', 'processing'):
+                return j
+    return None
 
 
 @app.route('/api/download', methods=['POST'])
@@ -3732,12 +3802,27 @@ def api_download():
         if keys:
             force_ie = keys[0]
 
+    # DEDUPE: kalau video yang sama masih diunduh, pakai job yang berjalan —
+    # bukan buat job baru (biar tidak double-download & kena rate-limit).
+    dup = find_active_job(url)
+    if dup:
+        # selaraskan mode kalau user minta mode lain? tetap pakai job berjalan.
+        return jsonify({'ok': True, 'job_id': dup['id'], 'duplicate': True})
+
     job = new_job()
     if data.get('title'):
         job['_title'] = str(data['title'])[:120]
     detected = detect_platform(url) or {}
     job['_platform'] = plat_key or detected.get('key') or ''
     job['_mode'] = mode
+    job['_url'] = url   # untuk dedupe
+    # simpan user untuk pencatatan riwayat otomatis saat job selesai
+    try:
+        _u = _auth_from_request()
+        if _u:
+            job['_user_id'] = _u['id']
+    except Exception:
+        pass
     # Platform dengan direct download (file/media biasa) → jalur khusus
     if detected.get('key') in ('github', 'mediafire', 'threads', 'reddit') and not force_ie:
         t = threading.Thread(target=run_custom_platform,
@@ -3811,6 +3896,7 @@ def run_direct_file_download(job, url, direct_url, title, platform_key, mode='be
             job['duration'] = round(dur) if dur else None
             job['duration_text'] = format_duration(job['duration'])
             job['message'] = 'Selesai dalam ' + elapsed_of(job)
+            _record_done_history(job)
             return True
     except Exception as e:
         job['status'] = 'error'
@@ -3838,6 +3924,7 @@ def run_custom_platform(job, url, plat_key, mode):
             job['filename'] = os.path.basename(fp)
             job['filesize_mb'] = mb(os.path.getsize(fp))
             job['message'] = 'Selesai dalam ' + elapsed_of(job)
+            _record_done_history(job)
             return
         du = (info.get('direct_urls') or [None])[0]
         if not du:
@@ -3878,16 +3965,6 @@ def api_file(job_id):
 
     ext = os.path.splitext(filepath)[1] or ''
     download_name = safe_filename(job.get('_title') or 'download') + ext
-
-    # Catat ke riwayat akun (jika user login)
-    try:
-        user = _auth_from_request()
-        if user:
-            plat = job.get('_platform') or ''
-            record_history(user, job.get('_title'), plat, job.get('_mode'),
-                           os.path.basename(filepath), job.get('filesize_mb'))
-    except Exception:
-        pass
 
     @after_this_request
     def cleanup(resp):
@@ -4079,6 +4156,23 @@ def api_auth_me():
 # ============================================================================
 # RIWAYAT DOWNLOAD per akun
 # ============================================================================
+
+def _record_done_history(job):
+    """Catat riwayat download ke akun saat job SELESAI (otomatis, bukan
+    hanya saat file diunduh). No-op kalau user tidak login."""
+    uid = job.get('_user_id')
+    if not uid:
+        return
+    try:
+        rows = db_query("SELECT * FROM users WHERE id=?", (uid,))
+        if not rows:
+            return
+        record_history(rows[0], job.get('_title'), job.get('_platform'),
+                       job.get('_mode'), job.get('filename'), job.get('filesize_mb'))
+    except Exception:
+        pass
+
+
 def record_history(user, title, platform, mode, filename, size_mb):
     if not user:
         return

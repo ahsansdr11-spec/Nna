@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=43">
+    <link rel="stylesheet" href="/static/style.css?v=45">
 </head>
 <body>
 
@@ -123,6 +123,14 @@
                     <span class="stat-label">Platform</span>
                 </div>
                 <div class="stat">
+                    <span class="stat-num" id="stat-users">–</span>
+                    <span class="stat-label">Akun</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-num" id="stat-online">–</span>
+                    <span class="stat-label">Online</span>
+                </div>
+                <div class="stat">
                     <span class="stat-num">100%</span>
                     <span class="stat-label">Gratis</span>
                 </div>
@@ -157,6 +165,17 @@
                     <button class="btn primary" onclick="submitPlatformRequest()">Usulkan</button>
                 </div>
                 <div class="plat-req-list" id="plat-req-list" style="margin-top:12px"></div>
+            </div>
+
+            <!-- Riwayat download (pindah dari Cara Pakai) -->
+            <div class="card mb-3 home-history" style="margin-top:18px">
+                <div class="card-head">
+                    <span class="card-ic">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M12 8v4l3 3M12 21a9 9 0 110-18 9 9 0 010 18z"/></svg>
+                    </span>
+                    <h3 class="card-title">Riwayat download (akunmu)</h3>
+                </div>
+                <div id="history-box" class="muted">Login untuk melihat riwayat download-mu.</div>
             </div>
 
             <!-- Lapor Bug / Feedback (pindah dari Cara Pakai) -->
@@ -303,16 +322,6 @@
             <div class="about-head">
                 <span class="hero-eyebrow">Panduan</span>
                 <h1 class="hero-title">Cara <span class="grad">Pakai</span></h1>
-            </div>
-
-            <div class="card mb-3">
-                <div class="card-head">
-                    <span class="card-ic">
-                        <svg viewBox="0 0 24 24" class="ic"><path d="M12 8v4l3 3M12 21a9 9 0 110-18 9 9 0 010 18z"/></svg>
-                    </span>
-                    <h3 class="card-title">Riwayat download (akunmu)</h3>
-                </div>
-                <div id="history-box" class="muted">Login untuk melihat riwayat download-mu.</div>
             </div>
 
             <div class="card mb-3">
@@ -493,6 +502,6 @@
     <!-- ================= TOAST ================= -->
     <div id="toast" class="toast"></div>
 
-    <script src="/static/app.js?v=43"></script>
+    <script src="/static/app.js?v=45"></script>
 </body>
 </html>

@@ -184,6 +184,8 @@ body {
 .chat-msg {
     background: var(--surface-2); border: 1px solid var(--border);
     border-radius: 12px; padding: 9px 13px; max-width: 85%;
+    touch-action: pan-y;          /* scroll vertikal tetap jalan; geser horizontal bisa ditangkap */
+    will-change: transform;
 }
 .chat-msg.own { align-self: flex-end; background: var(--grad-soft); border-color: rgba(99,102,241,.35); }
 .chat-msg .cm-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 2px; }
@@ -504,8 +506,8 @@ select#format-select {
 
 /* ---------- Stats strip ---------- */
 .stats-strip {
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
-    max-width: 780px; margin-top: 24px;
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px;
+    max-width: 960px; margin-top: 24px;
 }
 .stat {
     background: var(--surface); border: 1px solid var(--border);

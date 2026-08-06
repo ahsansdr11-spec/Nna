@@ -2,7 +2,7 @@
 
 // Nomor versi UI (build). NAIKKAN 1 tiap rombak frontend — tampil di footer
 // supaya bisa dicek tanpa buka inspect element. Kunci dari "cara ngecek bump".
-const UI_VERSION = 43;
+const UI_VERSION = 45;
 
 const $ = (s) => document.querySelector(s);
 
@@ -456,16 +456,27 @@ function renderInfo(info) {
         options += `</optgroup>`;
     }
 
-    // Resolusi: pill buttons (default 1080p)
-    const resList = [
-        { v: 'original', l: 'Asli' },
-        { v: '2160', l: '4K' },
-        { v: '1440', l: '2K' },
-        { v: '1080', l: '1080p' },
-        { v: '720', l: '720p' },
-        { v: '480', l: '480p' },
-        { v: '360', l: '360p' },
-    ];
+    // Resolusi: pill buttons DINAMIS dari format yang tersedia (bukan gimmick).
+    // Kalau video maksimal 1080p, tidak menawarkan 4K — jadi apa yang dipilih
+    // benar-benar resolusi yang ada.
+    const availHeights = [];
+    (info.formats || []).forEach(f => {
+        const h = f.height || 0;
+        if (h > 0 && !availHeights.includes(h)) availHeights.push(h);
+    });
+    const maxH = info.max_height || Math.max(0, ...availHeights) || 1080;
+    const RES_LABEL = { 2160: '4K', 1440: '2K', 1080: '1080p', 720: '720p', 480: '480p', 360: '360p' };
+    const resList = [{ v: 'original', l: 'Asli' }];
+    [2160, 1440, 1080, 720, 480, 360].forEach(h => {
+        if (maxH >= h || availHeights.includes(h)) {
+            resList.push({ v: String(h), l: RES_LABEL[h] });
+        }
+    });
+    // pastikan pilihan resolusi yang tersimpan masih valid untuk video ini
+    if (!resList.some(r => r.v === String(resSel)) && resSel !== 'original') {
+        // jatuhkan ke resolusi tertinggi yang tersedia
+        resSel = maxH >= 2160 ? '2160' : (maxH >= 1440 ? '1440' : (maxH >= 1080 ? '1080' : (maxH >= 720 ? '720' : (maxH >= 480 ? '480' : '360'))));
+    }
 
     const note = info.note ? `<p class="info-note">${esc(info.note)}</p>` : '';
 
@@ -658,21 +669,34 @@ async function downloadMedia(idx) {
 
 /* ---------- Download ---------- */
 async function startDownload(mode) {
-    if (!currentInfo) return;
+    if (!currentInfo) { toast('Analisis URL dulu ya!', true); return; }
     await beginDownload(mode, null);
 }
 
 async function downloadSelected() {
-    if (!currentInfo) return;
-    const val = $('#format-select').value;
+    if (!currentInfo) { toast('Analisis URL dulu ya!', true); return; }
+    const sel = document.getElementById('format-select');
+    if (!sel) {
+        // Tidak ada pilihan format → fallback ke mode terbaik (jangan diam)
+        toast('Format tidak tersedia — memakai mode terbaik.', true);
+        await beginDownload('best', null);
+        return;
+    }
+    const val = sel.value;
     if (val.startsWith('custom:')) await beginDownload('custom', val.slice(7));
     else await beginDownload(val, null);
 }
 
 async function beginDownload(mode, formatId) {
+    if (!currentInfo) { toast('Analisis URL dulu ya!', true); return; }
     dlStart = Date.now();
-    $('#progress-card').classList.remove('hidden');
-    $('#progress-card').innerHTML = `
+    // Buat kartu progress BARU per download (tidak menimpa kartu lama) —
+    // supaya download berulang selalu punya kartu sendiri & tidak mungkin
+    // konflik dengan kartu done sebelumnya.
+    const wrap = document.createElement('div');
+    wrap.className = 'progress-card';
+    wrap.id = 'progress-card-' + Date.now();
+    wrap.innerHTML = `
         <div class="progress-head">
             <span class="progress-title no-translate">${esc(currentInfo ? currentInfo.title : 'Mengunduh…')}</span>
                 <span class="progress-status" id="progress-status">Antre</span>
@@ -687,8 +711,18 @@ async function beginDownload(mode, formatId) {
             </div>
             <p class="progress-msg" id="progress-msg">Memulai download…</p>
             <p class="progress-eta" id="progress-eta"></p>`;
-
-    $('#progress-card').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // sisipkan di atas kartu done lama / di bawah info card
+    const anchor = document.querySelector('#progress-card');
+    const holder = anchor && !anchor.classList.contains('hidden') ? anchor : null;
+    if (holder && holder.querySelector('.done-card')) {
+        holder.after(wrap);
+    } else {
+        const infoCard = document.getElementById('info-card');
+        if (infoCard) infoCard.after(wrap);
+        else document.querySelector('.content').appendChild(wrap);
+    }
+    wrap.classList.remove('hidden');
+    wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
     // Baca resolusi yang dipilih (default 1080p)
     let resolution = resSel || '1080';
@@ -709,49 +743,60 @@ async function beginDownload(mode, formatId) {
                 platform: platSel || undefined,
             }),
         });
-        pollJob(res.job_id);
+        pollJobInto(res.job_id, '#' + wrap.id);
     } catch (e) {
         toast('Gagal memulai download: ' + e.message, true);
-        $('#progress-card').classList.add('hidden');
+        wrap.remove();
     }
 }
 
-async function pollJob(jobId) {
+async function pollJobInto(jobId, selector) {
     clearInterval(pollTimer);
     registerPoll(jobId);
-    const pc = $('#progress-card');
-    if (pc) pc.dataset.jobId = jobId;
+    const box0 = document.querySelector(selector);
+    if (!box0) { unregisterPoll(jobId); return; }
+    box0.dataset.jobId = jobId;
     let fails = 0;
     pollTimer = setInterval(async () => {
-        if ($('#progress-card').classList.contains('hidden')) { clearInterval(pollTimer); unregisterPoll(jobId); return; }
+        const box = document.querySelector(selector);
+        if (!box || box.classList.contains('hidden')) { clearInterval(pollTimer); unregisterPoll(jobId); return; }
         try {
             const j = await fetchJSON('/api/job/' + jobId);
             fails = 0;
             const map = { downloading: 'Mengunduh…', processing: 'Memproses…', done: 'Selesai', error: 'Gagal', queued: 'Antre' };
-            $('#progress-status').textContent = map[j.status] || j.status;
-            $('#progress-msg').textContent = j.message || '';
-            const etaEl = $('#progress-eta');
+            const stEl = box.querySelector('#progress-status');
+            const msgEl = box.querySelector('#progress-msg');
+            const fillEl = box.querySelector('#progress-fill');
+            const pctEl = box.querySelector('#progress-pct');
+            const timeEl = box.querySelector('#progress-time');
+            const etaEl = box.querySelector('#progress-eta');
+            if (stEl) stEl.textContent = map[j.status] || j.status;
+            if (msgEl) msgEl.textContent = j.message || '';
             if (etaEl) {
                 const m = (j.message || '').match(/sisa (\d+:\d{2})/);
                 etaEl.textContent = m ? 'Perkiraan selesai: ' + m[1] : '';
             }
-            $('#progress-fill').style.width = Math.min(100, Math.max(0, j.progress || 0)) + '%';
-            const pctEl = $('#progress-pct');
+            if (fillEl) fillEl.style.width = Math.min(100, Math.max(0, j.progress || 0)) + '%';
             if (pctEl) pctEl.textContent = Math.round(j.progress || 0) + '%';
-            tickProgressTime();
+            if (timeEl) timeEl.textContent = fmtDur((Date.now() - dlStart) / 1000);
 
             if (j.status === 'done') {
                 clearInterval(pollTimer);
                 unregisterPoll(jobId);
                 const totalT = fmtDur((Date.now() - dlStart) / 1000);
-                $('#progress-fill').style.width = '100%';
-                revealDoneCard(jobId, j, totalT);
-                toast('Download selesai dalam ' + totalT + '! Klik Simpan file.');
+                if (fillEl) fillEl.style.width = '100%';
+                if (pctEl) pctEl.textContent = '100%';
+                box.dataset.jobDone = '1';
+                revealDoneCardInto(jobId, j, totalT, box);
+                renderHistory();
+                toast(String(selector).indexOf('music') >= 0
+                    ? 'MP3 siap diunduh! (' + totalT + ')'
+                    : 'Download selesai dalam ' + totalT + '! Klik Simpan file.');
             } else if (j.status === 'error') {
                 clearInterval(pollTimer);
                 unregisterPoll(jobId);
                 toast('Ups, download gagal', true);
-                $('#progress-card').innerHTML = `
+                box.innerHTML = `
                     <div class="state-error">
                         <b>Ups, download gagal</b>
                         <p>${esc(j.error || 'Kesalahan tidak diketahui')}</p>
@@ -768,6 +813,17 @@ async function pollJob(jobId) {
             }
         }
     }, 1200);
+}
+
+function revealDoneCardInto(jobId, j, totalT, box) {
+    box.classList.remove('fading', 'hidden');
+    box.innerHTML = doneCardHtml(jobId, j, totalT);
+    box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function pollJob(jobId) {
+    // Kompatibilitas: alihkan ke polling per-kartu (selector default #progress-card).
+    pollJobInto(jobId, '#progress-card');
 }
 
 function saveFile(jobId, btn) {
@@ -978,58 +1034,6 @@ function beginMusicDownload(videoId, title, mode) {
             const p = $('#music-progress');
             if (p) p.remove();
         });
-}
-
-function pollJobInto(jobId, selector) {
-    clearInterval(pollTimer);
-    registerPoll(jobId);
-    const box0 = document.querySelector(selector);
-    if (box0) box0.dataset.jobId = jobId;
-    let fails = 0;
-    pollTimer = setInterval(async () => {
-        try {
-            const j = await fetchJSON('/api/job/' + jobId);
-            fails = 0;
-            const box = document.querySelector(selector);
-            if (!box || box.classList.contains('hidden')) { clearInterval(pollTimer); unregisterPoll(jobId); return; }
-            const map = { downloading: 'Mengunduh…', processing: 'Memproses…', done: 'Selesai', error: 'Gagal', queued: 'Antre' };
-            box.querySelector('#progress-status').textContent = map[j.status] || j.status;
-            box.querySelector('#progress-msg').textContent = j.message || '';
-            box.querySelector('#progress-fill').style.width = Math.min(100, Math.max(0, j.progress || 0)) + '%';
-            const pctBox = box.querySelector('#progress-pct');
-            if (pctBox) pctBox.textContent = Math.round(j.progress || 0) + '%';
-            const pt = box.querySelector('#progress-time');
-            if (pt && dlStart) pt.textContent = fmtDur((Date.now() - dlStart) / 1000);
-            if (j.status === 'done') {
-                clearInterval(pollTimer);
-                unregisterPoll(jobId);
-                const totalT = fmtDur((Date.now() - dlStart) / 1000);
-                box.querySelector('#progress-fill').style.width = '100%';
-                box.classList.remove('fading', 'hidden');
-                box.dataset.jobDone = '1';
-                box.innerHTML = doneCardHtml(jobId, j, totalT);
-                box.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                toast('MP3 siap diunduh! (' + totalT + ')');
-            } else if (j.status === 'error') {
-                clearInterval(pollTimer);
-                unregisterPoll(jobId);
-                box.innerHTML = `<div class="state-error"><b>Ups, unduhan gagal</b><p>${esc(j.error || '')}</p></div>`;
-            }
-        } catch (e) {
-            // Satu kali gagal (jaringan sesaat) JANGAN mematikan polling —
-            // cukup lewati siklus ini. Kalau gagal terus-terusan baru berhenti.
-            fails++;
-            if (fails >= 8) {
-                clearInterval(pollTimer);
-                unregisterPoll(jobId);
-                const box = document.querySelector(selector);
-                if (box) {
-                    box.innerHTML = `<div class="state-error"><b>Koneksi terputus sesaat</b>
-                        <p>Proses tetap berjalan di server. Muat ulang halaman untuk melihat status terbaru.</p></div>`;
-                }
-            }
-        }
-    }, 1200);
 }
 
 function renderCards(items, type) {
@@ -2597,6 +2601,59 @@ function chatCancelReply() {
     document.getElementById('chat-replybar').classList.add('hidden');
 }
 
+/* ————— Geser pesan ke kanan = Balas (seperti WhatsApp) ————— */
+function setupChatSwipe() {
+    const list = document.getElementById('chat-list');
+    if (!list) return;
+    let startX = 0, startY = 0, swiping = false, msg = null;
+
+    list.addEventListener('touchstart', (e) => {
+        const t = e.touches[0];
+        startX = t.clientX;
+        startY = t.clientY;
+        msg = e.target && e.target.closest ? e.target.closest('.chat-msg') : null;
+        swiping = false;
+    }, { passive: true });
+
+    list.addEventListener('touchmove', (e) => {
+        if (!msg) return;
+        const t = e.touches[0];
+        const dx = t.clientX - startX;
+        const dy = t.clientY - startY;
+        if (!swiping) {
+            // mulai geser horizontal hanya kalau lebih horizontal daripada vertikal
+            if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
+                swiping = true;
+            }
+        }
+        if (swiping) {
+            e.preventDefault();   // hentikan scroll vertikal saat geser pesan
+            const x = Math.max(-20, Math.min(92, dx));
+            msg.style.transition = 'none';
+            msg.style.transform = 'translateX(' + x + 'px)';
+            msg.style.opacity = String(Math.max(0.55, 1 - Math.abs(dx) / 260));
+        }
+    }, { passive: false });
+
+    list.addEventListener('touchend', () => {
+        if (!msg) return;
+        const m = msg;
+        const dx = (m.style.transform || '').match(/-?\d+(\.\d+)?/);
+        const x = dx ? parseFloat(dx[0]) : 0;
+        if (swiping && x > 55 && m.dataset.id) {
+            const who = m.querySelector('.cm-user') ? m.querySelector('.cm-user').textContent : '';
+            const text = m.querySelector('.cm-text') ? m.querySelector('.cm-text').textContent : '';
+            chatReplyTo(parseInt(m.dataset.id, 10), who, text.slice(0, 80));
+            toast('Membalas ' + who);
+        }
+        m.style.transition = 'transform .18s ease, opacity .18s ease';
+        m.style.transform = 'translateX(0)';
+        m.style.opacity = '';
+        msg = null;
+        swiping = false;
+    });
+}
+
 function chatPickFile() {
     if (!_authToken) { toast('Login dulu untuk kirim lampiran.', true); return; }
     document.getElementById('chat-file-input').click();
@@ -2667,6 +2724,18 @@ checkAuth().then(() => {
 loadNewsSetup();
 loadPlatformRequests();
 loadFeedback();
+loadStats();
+setInterval(loadStats, 30000);
+
+async function loadStats() {
+    try {
+        const d = await fetchJSON('/api/stats');
+        const u = document.getElementById('stat-users');
+        const o = document.getElementById('stat-online');
+        if (u) u.textContent = d.total_users != null ? Number(d.total_users).toLocaleString('id-ID') : '–';
+        if (o) o.textContent = d.online != null ? Number(d.online).toLocaleString('id-ID') : '–';
+    } catch (e) { /* abaikan */ }
+}
 mangaInitGenres().then(() => mangaRecommend());
 // Berita live: refresh otomatis tiap 2 menit saat tab Berita sedang terbuka,
 // dan perbarui teks "Live — diperbarui …" tiap 30 detik.
@@ -2677,6 +2746,7 @@ setInterval(() => {
 setInterval(() => updateNewsLive(), 30000);
 (function chatInit() {
     chatLoad();
+    setupChatSwipe();
     _chatTimer = setInterval(chatLoad, 4000);
     const ci = document.getElementById('chat-input');
     if (ci) ci.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') chatSend(); });
