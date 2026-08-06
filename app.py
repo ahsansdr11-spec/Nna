@@ -727,31 +727,24 @@ def base_ydl_opts():
 YT_BOT_HINTS = ('sign in to confirm', 'confirm you', 'not a bot', 'bot check', 'unable to extract initial data')
 
 
+# NONAKTIF SEMENTARA: plugin kd-pot-provider (yt_dlp_plugins/getpot.py) menembak
+# ke 4 "endpoint publik" yang TERNYATA TIDAK ADA layanan resminya (provider POT
+# asli seperti bgutil-ytdlp-pot-provider WAJIB di-hosting sendiri, tidak ada
+# versi publik gratis bersama) — dan requestnya pakai GET padahal API aslinya
+# POST. Hasilnya: 4 endpoint itu SELALU gagal/timeout. Karena kode mencoba 9
+# player client x 4 endpoint x 2 percobaan (timeout 20 detik/endpoint), setiap
+# kali semua client biasa gagal, aplikasi bisa nge-hang belasan menit sebelum
+# akhirnya balik pesan error ke user — bahkan bisa kena timeout Gunicorn
+# (120 detik) duluan sehingga user cuma lihat "YouTube sedang sibuk...".
+# Matikan dulu jalur ini; fallback tetap jalan lewat android_vr/tv/mweb/dll
+# + EJS (yt-dlp-ejs, jalan lokal pakai Deno yang sudah ada di Dockerfile) yang
+# memang jadi cara resmi yt-dlp terbaru menembus bot-check TANPA server POT
+# eksternal. Kalau nanti mau PO Token beneran, self-host bgutil-ytdlp-pot-
+# provider (pip install bgutil-ytdlp-pot-provider + jalankan servernya di
+# 127.0.0.1:4416 sebagai proses/container tambahan), baru nyalakan lagi.
 POT_AVAILABLE = False
-try:
-    # plugin POT lokal (yt_dlp_plugins/getpot.py) — PO Token untuk YouTube
-    import yt_dlp_plugins.getpot  # noqa: F401
-    POT_AVAILABLE = True
-except Exception:
-    pass
-if not POT_AVAILABLE:
-    try:
-        # plugin yt-dlp-get-pot (bgutil) kalau terpasang
-        import yt_dlp_plugins.extractor.getpot  # noqa: F401
-        POT_AVAILABLE = True
-    except Exception:
-        pass
-if not POT_AVAILABLE:
-    try:
-        import pkgutil, yt_dlp_plugins
-        POT_AVAILABLE = any('pot' in m.name.lower() for m in pkgutil.iter_modules(yt_dlp_plugins.__path__))
-    except Exception:
-        POT_AVAILABLE = False
-
-# Provider POT: pakai plugin lokal kita dulu; kalau tidak ada, bgutil resmi.
-POT_PROVIDER = 'kd-pot-provider' if POT_AVAILABLE else 'bgutil-ytdlp-pot-provider'
-# Provider POT cadangan yang dicoba kalau provider utama gagal (urutan)
-POT_PROVIDERS = ['kd-pot-provider', 'bgutil-ytdlp-pot-provider']
+POT_PROVIDER = None
+POT_PROVIDERS = []
 
 
 def with_player_client(opts, client, pot=False):
