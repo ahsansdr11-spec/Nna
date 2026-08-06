@@ -6,7 +6,6 @@ Universal open-source media downloader built with Flask and yt-dlp.
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/Flask-3.x-black?logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue?logo=docker&logoColor=white)](Dockerfile)
-[![GitHub Actions](https://github.com/ahsansdr11-spec/Nna/actions/workflows/ci.yml/badge.svg)](https://github.com/ahsansdr11-spec/Nna/actions/workflows/ci.yml)
 
 ## Features
 
