@@ -1,13 +1,25 @@
 # Menggunakan base image Python resmi yang ringan (pola sama dengan proyek YT Music Downloader)
 FROM python:3.11-slim
 
-# Install ffmpeg (wajib untuk merge video+audio & konversi MP3), unzip (untuk deno),
-# dan dependensi sistem
+# ffmpeg dari Debian (bookworm) itu LAMA (5.1.x) dan bisa CRASH saat memproses
+# HLS tertentu (terbukti: segfault di HLS Dailymotion → download gagal total).
+# Pasang build statis TERBARU dari BtbN (FFmpeg-Builds resmi komunitas, selalu
+# versi terkini dengan libx264/opus lengkap) — WAJIB untuk merge video+audio,
+# konversi MP3, fitur Konversi & HD Enhancer. unzip untuk deno.
 RUN apt-get update && apt-get install -y \
-    ffmpeg \
     curl \
+    xz-utils \
     unzip \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL -o /tmp/ffmpeg.tar.xz \
+        https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz \
+    && tar -xJf /tmp/ffmpeg.tar.xz -C /tmp \
+    && cp /tmp/ffmpeg-master-latest-linux64-gpl/bin/ffmpeg /usr/local/bin/ffmpeg \
+    && cp /tmp/ffmpeg-master-latest-linux64-gpl/bin/ffprobe /usr/local/bin/ffprobe \
+    && chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe \
+    && rm -rf /tmp/ffmpeg.tar.xz /tmp/ffmpeg-master-latest-linux64-gpl \
+    && ffmpeg -version | head -1 && ffprobe -version | head -1
 
 # Install Deno — JS runtime yang dipakai yt-dlp untuk menyelesaikan challenge
 # anti-bot YouTube & membuat PO token LOKAL (tanpa cookie, tanpa layanan pihak

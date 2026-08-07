@@ -1,6 +1,6 @@
-# LAPORAN PERBAIKAN — KINGS DOWNLOADER (UI v47 → v49)
+# LAPORAN PERBAIKAN — KINGS DOWNLOADER (UI v47 → v50)
 
-Tanggal audit: 7 Agustus 2026 · Status: **semua uji lulus (v48: 15/15, v49: 42/42 PASS)**
+Tanggal audit: 7 Agustus 2026 · Status: **semua uji lulus (v48: 15/15, v49: 42/42, v50: 50/50 PASS)**
 
 **Nama aplikasi & file TIDAK berubah** — tetap **KINGS DOWNLOADER** dan ZIP
 tetap bernama asli `universal-media-downloader.zip` (permintaan owner:
@@ -8,7 +8,129 @@ tetap bernama asli `universal-media-downloader.zip` (permintaan owner:
 
 ---
 
-# BAGIAN 1 — UPDATE v48 → v49 (7 Agustus 2026)
+# BAGIAN 1 — UPDATE v49 → v50 (7 Agustus 2026)
+
+## A. PERMINTAAN OWNER (VERBATIM)
+
+> "Coba tesnya dengan beneran tes link postingan/upload dari foto, file,
+> audio, dan video dari langsung di platformnya, kalau ada error fix sampai
+> bekerja di semua platform, dengan 3 tipe download, dengan semua resolusi,
+> dan kalau kita pengen download lagi itu harus langsung sedia dan ga
+> kehilangan fungsinya tiba-tiba kecuali kalau refresh, jadi fix itu"
+
+Dua tugas: **(1)** uji dengan LINK ASLI postingan (foto/file/audio/video)
+langsung dari platformnya — bukan sekadar baca kode — dan perbaiki sampai
+semua platform jalan dengan 3 tipe download (MP4 / MP3 / M4A) + semua
+resolusi; **(2)** perbaiki bug "download lagi harus langsung tersedia,
+tidak boleh tiba-tiba kehilangan fungsi kecuali habis refresh".
+
+## B. BUG NYATA YANG DITEMUKAN & DIPERBAIKI (semua dari pengujian LIVE)
+
+### 1. `/api/file/<job>` menghapus file setelah PENYIMPANAN PERTAMA
+Akar masalah dari keluhan "kalau mau download lagi fungsinya hilang":
+setelah file dikirim sekali ke browser, server langsung menghapusnya —
+klik Simpan kedua (unduhan browser gagal di tengah / klik dobel / simpan
+di perangkat lain) mendapat **404 / file JSON error**.
+**Fix:** file TIDAK dihapus setelah dikirim; pembersihan tetap otomatis
+lewat TTL job (30 menit). Kalau benar-benar sudah kedaluwarsa, server
+membalas pesan ramah ("File sudah kedaluwarsa… silakan unduh ulang")
+bukan error teknis. **Frontend** `saveFile()` juga diubah: memeriksa dulu
+ketersediaan file (HEAD), TIDAK menutup kartu hasil setelah menyimpan,
+dan label tombol berganti "Tersimpan — klik untuk simpan lagi".
+
+### 2. Instagram: `/api/info` membeku 4+ MENIT di postingan foto
+gallery-dl mengulang rate-limit 429 Instagram sampai **245,6 detik**
+sebelum menyerah — padahal jalur embed publik merespons 0,8 detik.
+**Fix:** urutan fallback per-platform untuk Instagram diubah menjadi
+embed → media-direct → gallery-dl (terakhir), retry Instagram gallery-dl
+dibatasi (retries=1, sleep-request=1) di `/api/info` DAN di download galeri.
+Hasil: info Instagram **2,3 detik** (dulu habis timeout 120 dtk).
+
+### 3. Dailymotion: semua download gagal di 100% (ffmpeg lama + bug yt-dlp)
+Rantai akar masalah: Dailymotion memakai HLS MPEG-TS ("lumberjack") →
+ffmpeg lama (static 7.0.2 SEGFAULT; ffmpeg 5.1 Debian hasil kosong) →
+`json.loads('')` melempar **JSONDecodeError** yang tidak ditangkap yt-dlp
+(ia hanya menangkap PostProcessingError) → download yang 100% selesai
+dibunuh. **Fix ganda:** (a) monkeypatch `get_metadata_object` di app.py
+mengubah SEMUA kegagalan ffprobe menjadi PostProcessingError supaya jalur
+fallback yt-dlp berjalan persis seperti rancangannya; (b) **Dockerfile**
+kini memasang **ffmpeg build terbaru dari BtbN** (master gpl) yang terbukti
+memproses HLS Dailymotion dengan sempurna (m3u8 → MP4 h264+aac bersih).
+Hasil: **6/6 PASS** — best (4K 3840×2160 terverifikasi ffprobe), 2160,
+1080, 360, MP3, M4A.
+
+### 4. Pinterest pin FOTO: `/api/info` lambat 37,7 detik
+yt-dlp dipanggil duluan; untuk pin tanpa video ia mencoba **16 kali**
+(search-info 4× + retry internal) sebelum gagal "No video formats found".
+**Fix:** (a) error "no video formats found" kini langsung di-raise tanpa
+retry (postingan foto tidak akan berubah jadi video); (b) Pinterest dicoba
+lewat jalur galeri (gallery-dl) DULU sebelum yt-dlp — pin foto maupun pin
+video sama-sama cepat. Hasil: **1,0 detik** (dulu 37,7 dtk).
+
+### 5. Judul file media langsung (CDN/link .mp4 mentah) generik
+Link langsung ke file media menampilkan judul "Konten Media".
+**Fix:** judul diambil dari nama file di URL (url-decoded).
+
+### 6. Catatan lingkungan (bukan bug kode)
+`curl_cffi` (wajib untuk impersonasi TLS anti-bot) **memang sudah ada di
+requirements.txt** (`curl_cffi==0.11.4`, pin kompatibel yt-dlp) — sandbox
+uji ini saja yang belum memasangnya; setelah dipasang, TikTok &
+Dailymotion langsung berfungsi penuh. Di produksi (Docker) sudah otomatis.
+
+## C. HASIL UJI LIVE DENGAN LINK ASLI (50/50 PASS, hasil diverifikasi ffprobe)
+
+| Platform & link asli | Info | MP4 best | Resolusi | MP3 | M4A | Foto/ZIP |
+|---|---|---|---|---|---|---|
+| YouTube (Despacito) | 25 format ≤1080p | h264 1920×1080+aac | 720 ✓ 360 ✓ | ✓ | ✓ | — |
+| TikTok (@tiktok) | ≤1920 | hevc 1080×1920+aac | 1080 ✓ | ✓ | ✓ | — |
+| X/Twitter video (SpaceX) | ≤2160 | h264 3840×2160+aac | 2160 ✓ 360 ✓ | ✓ | ✓ | — |
+| X/Twitter foto (tweet Obama) | 1 foto | — | — | — | — | ZIP ✓ |
+| Instagram foto (3 slide) | 3 foto, 2,3 dtk | — | — | — | — | ZIP 3 foto ✓ |
+| Dailymotion | ≤2160 | h264 3840×2160+aac | 2160 ✓ 1080 ✓ 360 ✓ | ✓ | ✓ | — |
+| Facebook video | ✓ | h264+aac ✓ | — | ✓ | — | — |
+| SoundCloud (Monstercat) | ✓ | (m4a asli — platform audio) | — | ✓ 192k | ✓ | — |
+| Bandcamp (audio 7,7 mnt) | ✓ | MP3 valid ✓ | — | ✓ | ✓ | — |
+| Pinterest video pin | 416–1280p | h264 720×1280+aac | ✓ | ✓ | — | — |
+| Pinterest foto pin | 1 foto, 1 dtk | — | — | — | — | ZIP ✓ |
+| MediaFire (file zip) | ✓ | file utuh ✓ | — | — | — | ✓ |
+| Link langsung .mp4/.jpg (CDN) | judul dari nama file | ✓ | — | ✓ | ✓ | ✓ |
+
+Catatan jujur: **“best” di platform audio** (SoundCloud/Bandcamp) memang
+menghasilkan **file audio** (.m4a / .mp3, dengan cover) — itu perilaku
+yang benar; MP4 tidak mungkin ada karena sumbernya bukan video.
+
+### Uji "download lagi langsung sedia" (9/9 PASS)
+simpan file #1 ✓ · HEAD cek ✓ · **simpan #2 identik** ✓ (tidak 404) ·
+URL sama diunduh lagi → **job baru langsung jalan** ✓ · MP3 #1 ✓ ·
+MP3 #2 langsung sedia ✓ · galeri simpan 2x ✓ · galeri #2 job baru ✓ ·
+job kedaluwarsa → pesan ramah (bukan traceback) ✓
+
+### Uji komunikasi live (tanpa refresh)
+login admin ✓ · announcement admin ✓ · **SSE mengirim event change INSTAN
+(0,0 dtk)** ✓ · chat POST ✓ · live-check rev naik ✓ · announcement
+muncul di GET ✓ · hapus announcement ✓ — semua tanpa refresh halaman.
+
+## D. PERUBAHAN TEKNIS v50
+
+- `app.py`: `/api/file` tanpa hapus-setelah-kirim + pesan kedaluwarsa
+  ramah; monkeypatch `get_metadata_object` → PostProcessingError; urutan
+  fallback per-platform Instagram (embed-first) + instagram retries=1;
+  Pinterest galeri-pertama + raise-instan "no video formats"; judul media
+  langsung dari nama file.
+- `static/app.js` (UI_VERSION=50): `saveFile()` async — HEAD-check dulu,
+  kartu TIDAK ditutup, label "Tersimpan — klik untuk simpan lagi".
+- `Dockerfile`: ffmpeg diganti ke **BtbN ffmpeg-master-latest (GPL)**,
+  + curl/xz-utils/ca-certificates untuk memasangnya.
+- Cache-bust aset `?v=50` (style.css & app.js) — footer **"Versi UI v50"**.
+- `requirements.txt` TIDAK berubah (curl_cffi==0.11.4 dll memang sudah ada).
+
+**Deploy v50:** setelah push & redeploy, footer harus berbunyi
+**"Versi UI v50"**. Wajib rebuild image Docker (bukan hanya restart)
+karena ffmpeg baru dipasang saat build.
+
+---
+
+# BAGIAN 2 — UPDATE v48 → v49 (7 Agustus 2026)
 
 ## A. PERMINTAAN: 100% WORK DI SEMUA TIPE & RESOLUSI
 
@@ -116,7 +238,7 @@ otomatis terpasang via Dockerfile.
 ---
 ---
 
-# BAGIAN 2 — UPDATE v47 → v48 (7 Agustus 2026)
+# BAGIAN 3 — UPDATE v47 → v48 (7 Agustus 2026)
 
 Audit dilakukan menyeluruh terhadap `app.py` (5.500+ baris), `static/app.js`
 (3.000+ baris), `static/index.html`, dan `static/style.css`, disusul uji

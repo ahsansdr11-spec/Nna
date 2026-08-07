@@ -2,7 +2,7 @@
 
 // Nomor versi UI (build). NAIKKAN 1 tiap rombak frontend — tampil di footer
 // supaya bisa dicek tanpa buka inspect element. Kunci dari "cara ngecek bump".
-const UI_VERSION = 49;
+const UI_VERSION = 50;
 
 const $ = (s) => document.querySelector(s);
 
@@ -870,17 +870,31 @@ function pollJob(jobId) {
     pollJobInto(jobId, '#progress-card');
 }
 
-function saveFile(jobId, btn) {
+async function saveFile(jobId, btn) {
+    // Cek dulu file masih ada di server — jangan sampai browser malah
+    // men-download respons error JSON kalau file sudah kedaluwarsa/dibersihkan.
+    try {
+        const head = await fetch('/api/file/' + jobId, { method: 'HEAD' });
+        if (!head.ok) {
+            let msg = 'File sudah kedaluwarsa di server — silakan unduh ulang ya, gratis kok.';
+            try { const j = await head.json(); if (j.error) msg = j.error; } catch (e) {}
+            toast(msg, true);
+            return;
+        }
+    } catch (e) { /* HEAD gagal jaringan → tetap coba unduh biasa */ }
     const a = document.createElement('a');
     a.href = '/api/file/' + jobId;
     a.download = '';
     document.body.appendChild(a);
     a.click();
     a.remove();
-    // Setelah file tersimpan, tutup kartu "Selesai" (yang berisi tombol ini).
-    // HANYA kalau btn ada — kalau dipanggil dari daftar antrean musik (tanpa
-    // btn), jangan sampai ikut menutup kartu progress Beranda yang sedang jalan.
-    if (btn) dismissCard(btn);
+    // Kartu SENGAJA TIDAK ditutup: server menyimpan file sampai TTL (±30 menit),
+    // jadi pengguna bisa MENYIMPAN LAGI kapan pun tanpa mengunduh ulang dan
+    // tanpa refresh. Cukup ubah label tombolnya sebagai umpan balik.
+    if (btn) {
+        btn.innerHTML = IC.check + ' Tersimpan — klik untuk simpan lagi';
+        toast('File tersimpan! Mau simpan lagi? Klik tombolnya lagi saja.');
+    }
 }
 
 function dismissDoneCard() {

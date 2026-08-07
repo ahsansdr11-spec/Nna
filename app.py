@@ -47,6 +47,35 @@ import yt_dlp
 from flask import (Flask, request, jsonify, send_file,
                    after_this_request, Response, stream_with_context)
 
+# ---------------------------------------------------------------------------
+# KETANGGUHAN ffprobe: beberapa build ffmpeg lama (mis. static 7.0.2 / ffmpeg
+# 5.x bawaan Debian bookworm) bisa CRASH (segfault) / mengembalikan output
+# kosong saat mem-probe stream HLS tertentu — terbukti pada HLS Dailymotion
+# (MPEG-TS "lumberjack"). yt-dlp di FFmpegFixupM3u8PP hanya menangkap
+# PostProcessingError; JSONDecodeError dari `json.loads(output ffprobe kosong)`
+# akan membunuh download yang SUDAH 100% selesai. Alihkan SEMUA kegagalan
+# probe ke PostProcessingError supaya jalur fallback yt-dlp (fixup / strategi
+# berikutnya) berjalan persis seperti yang dirancangnya.
+# (Jangkar permanen: Dockerfile memasang ffmpeg build TERBARU dari BtbN.)
+# ---------------------------------------------------------------------------
+try:
+    from yt_dlp.postprocessor.ffmpeg import FFmpegPostProcessor
+    from yt_dlp.utils import PostProcessingError as _YtdlpPPErr
+    _orig_get_metadata_object = FFmpegPostProcessor.get_metadata_object
+
+    def _safe_get_metadata_object(self, path, opts=[]):
+        try:
+            return _orig_get_metadata_object(self, path, opts)
+        except _YtdlpPPErr:
+            raise
+        except Exception as e:
+            raise _YtdlpPPErr(
+                'ffprobe gagal membaca file hasil (%s)' % type(e).__name__)
+
+    FFmpegPostProcessor.get_metadata_object = _safe_get_metadata_object
+except Exception:
+    pass
+
 # ytmusicapi (opsional) — untuk pencarian lagu ala proyek YT Music Downloader
 try:
     from ytmusicapi import YTMusic
@@ -737,7 +766,17 @@ def extract_with_fallback(url, opts, ie_key=None):
     except Exception as e:
         msg = str(e)
 
-        # 0) Sinyal blokir platform → catat cooldown (request berikutnya menunggu)
+        # 0a) Postingan FOTO/gambar (tanpa video sama sekali) — yt-dlp menolak
+        # dengan 'No video formats found' sambil membuang metadata yang sudah
+        # susah payah diambil (judul, thumbnail, uploader…). JANGAN di-retry
+        # (percuma: hasilnya selalu sama & hanya membuang waktu) — langsung
+        # raise supaya jalur fallback galeri (gallery-dl/embed/dll) mengambil
+        # alih dengan instan. (Bug nyata: pin FOTO Pinterest dulu butuh ~37
+        # detik hanya untuk tahu 'ini bukan video'.)
+        if 'no video formats found' in msg.lower():
+            raise
+
+        # 0b) Sinyal blokir platform → catat cooldown (request berikutnya menunggu)
         if is_block_signal(e):
             mark_platform_cooldown(url)
 
@@ -1518,6 +1557,11 @@ def extract_gallery(url):
         gdl_config.set(('extractor', 'instagram'), 'videos', True)
         gdl_config.set(('extractor', 'twitter'), 'videos', True)
         gdl_config.set(('extractor', 'generic'), 'request', 0)
+        # Anti-beku: Instagram merate-limit (429) dari IP server → batasi
+        # retry & jeda bawaan gallery-dl supaya gagal CEPAT (fallback embed/
+        # media-direct tetap mencoba). Default bawaan bisa mengulang 4+ menit.
+        gdl_config.set(('extractor', 'instagram'), 'retries', 1)
+        gdl_config.set(('extractor', 'instagram'), 'sleep-request', 1)
     except Exception:
         pass
 
@@ -3620,9 +3664,21 @@ def api_info():
     # (tidak ada video), fallback berjenjang: gallery-dl → syndication X →
     # meta og:image → pesan diagnostik dengan saran.
     photo_capable = platform and platform['key'] in ('instagram', 'x', 'facebook', 'tiktok', 'pinterest')
+    photo_first = platform and platform['key'] == 'pinterest'
 
     if photo_capable:
         reasons = []
+
+        # Pra-1) Pinterest: jalur galeri DULU sebelum yt-dlp (pin foto &
+        # pin video dua-duanya ditangani cepat oleh gallery-dl; yt-dlp hanya
+        # video dan gagal lambat di pin foto — ~37s sia-sia).
+        if photo_first:
+            try:
+                g = extract_gallery(url)
+                if g['items']:
+                    return jsonify(enriched_gallery_response(g, url, platform))
+            except Exception as e:
+                reasons.append(f'gallery-dl: {str(e)[:100]}')
 
         # 1) Coba video via yt-dlp
         try:
@@ -3642,42 +3698,36 @@ def api_info():
             # yt-dlp sukses tapi bukan video (audio-only slideshow, dll)
             # → lanjut ke galeri foto/video
 
-        # 2) gallery-dl (foto, carousel, story IG, slideshow TikTok)
-        try:
-            g = extract_gallery(url)
-            if g['items']:
-                resp = enriched_gallery_response(g, url, platform)
-                # kalau uploader belum ketemu (mis. Pinterest/FB), enrich cepat
-                # dari meta og: halaman (satu request tambahan, hanya saat perlu)
-                if resp.get('uploader') == 'Unknown':
-                    try:
-                        un = clean_name(page_username(url))
-                        if un:
-                            resp['uploader'] = un
-                    except Exception:
-                        pass
-                return jsonify(resp)
-        except Exception as e:
-            reasons.append(f'gallery-dl: {str(e)[:100]}')
-
-        # 3) Fallback spesifik platform TANPA login (berlapis):
+        # 2) Fallback berjenjang TANPA login — URUTAN PER PLATFORM.
+        #    Instagram: embed IG & media-direct DULU (cepat, <1s, tanpa login),
+        #    gallery-dl TERAKHIR — karena kalau Instagram merate-limit (429),
+        #    gallery-dl retry berlapis sampai 4+ MENIT dan membekukan
+        #    permintaan /api/info (pengguna menunggu sampai timeout).
+        #    Platform lain: gallery-dl dulu (paling lengkap), fallback cepat
+        #    kemudian:
         #    X/Twitter: fxtwitter → syndication twimg
-        #    Instagram: embed publik → endpoint media ?size=l
         #    Facebook:  plugin post embed
         #    TikTok:    parse __UNIVERSAL_DATA_FOR_REHYDRATION__ (foto slideshow)
         pkey = platform['key'] if platform else ''
-        extra = {
-            'x':         [('fxtwitter', extract_x_tweet)],
+        chains = {
             'instagram': [('embed IG', extract_instagram_embed),
-                          ('media IG', extract_instagram_media_direct)],
-            'facebook':  [('embed FB', extract_facebook_embed)],
-            'tiktok':    [('data TikTok', extract_tiktok_json)],
+                          ('media IG', extract_instagram_media_direct),
+                          ('gallery-dl', extract_gallery)],
+            'x':         [('gallery-dl', extract_gallery),
+                          ('fxtwitter', extract_x_tweet)],
+            'facebook':  [('gallery-dl', extract_gallery),
+                          ('embed FB', extract_facebook_embed)],
+            'tiktok':    [('gallery-dl', extract_gallery),
+                          ('data TikTok', extract_tiktok_json)],
+            'pinterest': [('gallery-dl', extract_gallery)],
         }
-        for label, fn in (extra.get(pkey) or []):
+        for label, fn in chains.get(pkey, [('gallery-dl', extract_gallery)]):
             try:
                 g = fn(url)
                 if g['items']:
                     resp = enriched_gallery_response(g, url, platform)
+                    # kalau uploader belum ketemu (mis. Pinterest/FB), enrich
+                    # cepat dari meta og: halaman (hanya saat perlu)
                     if resp.get('uploader') == 'Unknown':
                         try:
                             un = clean_name(page_username(url))
@@ -3740,9 +3790,15 @@ def run_gallery_download(job, url, items=None):
                 'tiktok': [extract_tiktok_json],
                 'pinterest': [],
             }
-            chain = [extract_gallery]
+            # Instagram: jalur cepat tanpa login DULU (embed/media-direct),
+            # gallery-dl terakhir — kalau IG merate-limit, gallery-dl bisa
+            # retry 4+ menit dan membekukan job download (lihat catatan di
+            # api_info). Platform lain tetap gallery-dl dulu.
+            chain = [] if pkey == 'instagram' else [extract_gallery]
             if pkey in extra:
                 chain += extra[pkey]
+            if pkey == 'instagram':
+                chain += [extract_gallery]
             chain += [extract_direct_media, extract_og_media]
             for fn in chain:
                 try:
@@ -4364,26 +4420,21 @@ def api_job(job_id):
 
 @app.route('/api/file/<job_id>')
 def api_file(job_id):
-    """Kirim file hasil download sekali, lalu bersihkan (mirip pola proyek asli)."""
+    """Kirim file hasil download. File TIDAK langsung dihapus setelah dikirim —
+    pengguna sering perlu menyimpan lagi (klik dobel, unduhan browser gagal
+    di tengah, simpan di perangkat lain), jadi file dipertahankan sampai
+    pembersihan TTL job biasa (JOB_TTL) yang memang otomatis berjalan."""
     job = JOBS.get(job_id)
     if not job or job['status'] != 'done' or not job['filepath']:
         return jsonify({'error': 'File belum siap.'}), 404
 
     filepath = job['filepath']
     if not os.path.exists(filepath):
-        return jsonify({'error': 'File sudah terhapus.'}), 404
+        return jsonify({'error': 'File sudah kedaluwarsa (dibersihkan otomatis setelah 30 menit). '
+                                 'Silakan unduh ulang — gratis dan cepat kok.'}), 404
 
     ext = os.path.splitext(filepath)[1] or ''
     download_name = safe_filename(job.get('_title') or 'download') + ext
-
-    @after_this_request
-    def cleanup(resp):
-        try:
-            os.remove(filepath)
-        except OSError:
-            pass
-        return resp
-
     return send_file(filepath, as_attachment=True, download_name=download_name)
 
 
