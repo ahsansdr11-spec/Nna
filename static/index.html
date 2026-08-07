@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=46">
+    <link rel="stylesheet" href="/static/style.css?v=47">
 </head>
 <body>
 
@@ -46,6 +46,10 @@
                 <svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 01-8 8H4l2-3a8 8 0 1115-5z"/></svg>
                 <span>Chat</span>
             </button>
+            <button class="nav-btn" id="nav-tickets" data-nav="tickets" onclick="showView('tickets')">
+                <svg viewBox="0 0 24 24"><path d="M3 7h18v6a2 2 0 00-2 2 2 2 0 002 2v0H3v0a2 2 0 002-2 2 2 0 00-2-2V7z"/></svg>
+                <span>Tiket</span>
+            </button>
             <button class="nav-btn" id="nav-about" data-nav="about" onclick="showView('about')">
                 <svg viewBox="0 0 24 24"><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3m.08 4h.01M12 21a9 9 0 110-18 9 9 0 010 18z"/></svg>
                 <span>Cara Pakai</span>
@@ -67,6 +71,9 @@
             </div>
         </div>
     </header>
+
+    <!-- ================= ANNOUNCEMENT BANNER ================= -->
+    <div class="ann-stack" id="ann-stack"></div>
 
     <main class="content">
 
@@ -317,6 +324,111 @@
             </div>
         </section>
 
+        <!-- ================= VIEW: TIKET ================= -->
+        <section id="view-tickets" class="view hidden">
+            <div class="music-hero">
+                <span class="music-hero-badge">
+                    <svg viewBox="0 0 24 24" class="ic"><path d="M3 7h18v6a2 2 0 00-2 2 2 2 0 002 2v0H3v0a2 2 0 002-2 2 2 0 00-2-2V7z"/></svg>
+                    Tiket — kirim bug/feedback/usulan platform &amp; ngobrol langsung dengan admin
+                </span>
+            </div>
+
+            <!-- Buat tiket baru -->
+            <div class="card mb-3">
+                <div class="card-head">
+                    <span class="card-ic grad-ic">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M12 5v14M5 12h14"/></svg>
+                    </span>
+                    <h3 class="card-title">Buat Tiket Baru</h3>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+                    <div class="filter-pills" id="tkt-type-pills">
+                        <button class="pill active" data-t="bug" onclick="tktSetType('bug')">🐞 Bug</button>
+                        <button class="pill" data-t="feedback" onclick="tktSetType('feedback')">💬 Feedback</button>
+                        <button class="pill" data-t="platform" onclick="tktSetType('platform')">➕ Usulan Platform</button>
+                    </div>
+                    <input type="text" id="tkt-subject" placeholder="Judul singkat (opsional)" maxlength="150" style="width:100%;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;padding:10px 13px;color:var(--text);outline:none">
+                    <textarea id="tkt-msg" rows="3" maxlength="3000" placeholder="Ceritakan detailnya di sini…" style="width:100%;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;padding:11px 13px;color:var(--text);font-family:var(--font-body);font-size:13.5px;outline:none;resize:vertical"></textarea>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                        <button class="btn primary" onclick="submitTicket()">Kirim Tiket</button>
+                        <span class="muted" style="font-size:11px" id="tkt-status"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tiket saya -->
+            <div class="card mb-3">
+                <div class="card-head">
+                    <span class="card-ic grad-ic">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                    </span>
+                    <h3 class="card-title">Tiket Saya</h3>
+                </div>
+                <div id="tkt-my-list" class="ticket-list" style="margin-top:10px">
+                    <span class="muted" style="font-size:12px">Login untuk melihat tiketmu.</span>
+                </div>
+            </div>
+
+            <!-- ============ PANEL ADMIN (hanya tampil untuk owner) ============ -->
+            <div id="admin-panel" class="hidden">
+                <div class="card mb-3" style="border-color:#f59e0b55">
+                    <div class="card-head">
+                        <span class="card-ic grad-ic">👑</span>
+                        <h3 class="card-title">Panel Admin — Kirim Announcement</h3>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+                        <div class="filter-pills" id="ann-type-pills">
+                            <button class="pill active" data-t="info" onclick="annSetType('info')">ℹ️ Info</button>
+                            <button class="pill" data-t="warning" onclick="annSetType('warning')">⚠️ Warning</button>
+                            <button class="pill" data-t="emergency" onclick="annSetType('emergency')">🚨 Emergency</button>
+                        </div>
+                        <input type="text" id="ann-title" placeholder="Judul announcement" maxlength="150" style="width:100%;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;padding:10px 13px;color:var(--text);outline:none">
+                        <textarea id="ann-msg" rows="2" maxlength="2000" placeholder="Isi pesan announcement…" style="width:100%;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;padding:11px 13px;color:var(--text);font-family:var(--font-body);font-size:13.5px;outline:none;resize:vertical"></textarea>
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                            <button class="btn primary" onclick="submitAnnouncement()">Kirim Announcement</button>
+                            <span class="muted" style="font-size:11px" id="ann-status"></span>
+                        </div>
+                    </div>
+                    <div id="ann-manage-list" style="margin-top:14px"></div>
+                </div>
+
+                <div class="card mb-3" style="border-color:#f59e0b55">
+                    <div class="card-head">
+                        <span class="card-ic grad-ic">📥</span>
+                        <h3 class="card-title">Kotak Masuk Tiket (Semua User)</h3>
+                    </div>
+                    <div class="filter-pills" id="admin-tkt-filter" style="margin-top:10px">
+                        <button class="pill active" data-s="" onclick="adminTktFilter('')">Semua</button>
+                        <button class="pill" data-s="open" onclick="adminTktFilter('open')">Terbuka</button>
+                        <button class="pill" data-s="answered" onclick="adminTktFilter('answered')">Dibalas</button>
+                        <button class="pill" data-s="closed" onclick="adminTktFilter('closed')">Ditutup</button>
+                    </div>
+                    <div id="admin-tkt-list" class="ticket-list" style="margin-top:10px"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= VIEW: TIKET THREAD (overlay) ================= -->
+        <div class="modal-overlay hidden" id="ticket-thread-overlay">
+            <div class="modal-box ticket-thread-box">
+                <div class="modal-head">
+                    <h3 id="tkt-thread-title">Tiket</h3>
+                    <button class="modal-x" onclick="closeTicketThread()" aria-label="Tutup">✕</button>
+                </div>
+                <div id="tkt-thread-meta" class="muted" style="font-size:11.5px;padding:0 2px 8px"></div>
+                <div id="tkt-thread-messages" class="ticket-thread-msgs"></div>
+                <div id="tkt-thread-admin-controls" class="hidden" style="display:flex;gap:6px;padding:6px 2px;flex-wrap:wrap">
+                    <button class="btn ghost mini" onclick="tktSetStatus('open')">Tandai Terbuka</button>
+                    <button class="btn ghost mini" onclick="tktSetStatus('answered')">Tandai Dibalas</button>
+                    <button class="btn ghost mini" onclick="tktSetStatus('closed')">Tutup Tiket</button>
+                </div>
+                <div class="ticket-thread-input">
+                    <input type="text" id="tkt-thread-reply" placeholder="Tulis balasan…" maxlength="3000" enterkeyhint="send">
+                    <button class="btn primary" onclick="sendTicketReply()">Kirim</button>
+                </div>
+            </div>
+        </div>
+
         <!-- ================= VIEW: ABOUT ================= -->
         <section id="view-about" class="view hidden">
             <div class="about-head">
@@ -502,6 +614,6 @@
     <!-- ================= TOAST ================= -->
     <div id="toast" class="toast"></div>
 
-    <script src="/static/app.js?v=46"></script>
+    <script src="/static/app.js?v=47"></script>
 </body>
 </html>

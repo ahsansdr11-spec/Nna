@@ -2,7 +2,7 @@
 
 // Nomor versi UI (build). NAIKKAN 1 tiap rombak frontend — tampil di footer
 // supaya bisa dicek tanpa buka inspect element. Kunci dari "cara ngecek bump".
-const UI_VERSION = 46;
+const UI_VERSION = 47;
 
 const $ = (s) => document.querySelector(s);
 
@@ -115,6 +115,7 @@ function showView(name) {
     $('#view-manga').classList.toggle('hidden', name !== 'manga');
     $('#view-news').classList.toggle('hidden', name !== 'news');
     $('#view-chat').classList.toggle('hidden', name !== 'chat');
+    $('#view-tickets').classList.toggle('hidden', name !== 'tickets');
     $('#view-about').classList.toggle('hidden', name !== 'about');
     // aktifkan tombol nav di atas (Beranda/Musik/Cara Pakai)
     document.querySelectorAll('[data-nav]').forEach(b =>
@@ -162,6 +163,9 @@ function showView(name) {
                 pc.classList.add('hidden');
             }
         }
+    } else if (name === 'tickets') {
+        loadMyTickets();
+        if (_authIsAdmin) { loadAdminTickets(); loadAdminAnnouncements(); }
     }
 }
 
@@ -1894,6 +1898,7 @@ function startClock() {
 let _authToken = localStorage.getItem('umd_token') || '';
 let _authUser = localStorage.getItem('umd_user') || '';
 let _authGuest = localStorage.getItem('umd_guest') === '1';
+let _authIsAdmin = false;
 
 function authHeaders(extra) {
     const h = Object.assign({}, extra || {});
@@ -1908,11 +1913,13 @@ function refreshAuthUI() {
     if (_authToken && _authUser) {
         if (loginBtn) loginBtn.classList.add('hidden');
         if (userBox) userBox.classList.remove('hidden');
-        if (nameEl) nameEl.textContent = _authUser + (_authGuest ? ' (tamu)' : '');
+        if (nameEl) nameEl.textContent = _authUser + (_authGuest ? ' (tamu)' : '') + (_authIsAdmin ? ' 👑' : '');
     } else {
         if (loginBtn) loginBtn.classList.remove('hidden');
         if (userBox) userBox.classList.add('hidden');
     }
+    const ap = document.getElementById('admin-panel');
+    if (ap) ap.classList.toggle('hidden', !_authIsAdmin);
     renderHistory();
 }
 
@@ -1950,6 +1957,7 @@ async function doAuth() {
         _authToken = res.token;
         _authUser = res.username;
         _authGuest = !!res.is_guest;
+        _authIsAdmin = !!res.is_admin;
         localStorage.setItem('umd_token', _authToken);
         localStorage.setItem('umd_user', _authUser);
         localStorage.setItem('umd_guest', _authGuest ? '1' : '0');
@@ -1980,7 +1988,7 @@ async function doGuest() {
 
 async function doLogout() {
     try { await fetchJSON('/api/auth/logout', { method: 'POST', headers: authHeaders() }); } catch (e) {}
-    _authToken = ''; _authUser = ''; _authGuest = false;
+    _authToken = ''; _authUser = ''; _authGuest = false; _authIsAdmin = false;
     localStorage.removeItem('umd_token');
     localStorage.removeItem('umd_user');
     localStorage.removeItem('umd_guest');
@@ -1996,6 +2004,8 @@ async function checkAuth() {
             _authToken = ''; _authUser = '';
             localStorage.removeItem('umd_token');
             localStorage.removeItem('umd_user');
+        } else {
+            _authIsAdmin = !!d.is_admin;
         }
     } catch (e) { /* offline — biarkan */ }
     refreshAuthUI();
@@ -2111,6 +2121,249 @@ async function submitPlatformRequest() {
         input.value = '';
         toast('Saran masuk ke kotak saran global!');
         loadPlatformRequests();
+    } catch (e) {
+        toast(e.message, true);
+    }
+}
+
+/* ============================================================
+   TIKET — bug report / feedback / usulan platform, dua arah dgn admin
+   ============================================================ */
+let _tktType = 'bug';
+let _tktCurrentId = null;
+let _adminTktFilter = '';
+let _annType = 'info';
+
+function tktSetType(t) {
+    _tktType = t;
+    document.querySelectorAll('#tkt-type-pills .pill').forEach(b =>
+        b.classList.toggle('active', b.dataset.t === t));
+}
+
+async function submitTicket() {
+    const subject = (document.getElementById('tkt-subject').value || '').trim();
+    const msg = (document.getElementById('tkt-msg').value || '').trim();
+    const status = document.getElementById('tkt-status');
+    if (!msg) { toast('Tulis pesannya dulu ya!', true); return; }
+    status.textContent = 'Mengirim…';
+    try {
+        const res = await fetchJSON('/api/tickets', {
+            method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ type: _tktType, subject, message: msg }),
+        });
+        status.textContent = res.message || 'Terkirim!';
+        document.getElementById('tkt-subject').value = '';
+        document.getElementById('tkt-msg').value = '';
+        loadMyTickets();
+        setTimeout(() => { status.textContent = ''; }, 4000);
+    } catch (e) {
+        status.textContent = '';
+        toast(e.message, true);
+    }
+}
+
+function tktBadgeLabel(t) {
+    return t === 'bug' ? '🐞 Bug' : t === 'platform' ? '➕ Platform' : '💬 Feedback';
+}
+function tktStatusLabel(s) {
+    return s === 'answered' ? 'Dibalas' : s === 'closed' ? 'Ditutup' : 'Terbuka';
+}
+
+function ticketRowHtml(t, showUser) {
+    const when = new Date(t.updated * 1000).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return `<div class="ticket-row" onclick="openTicket(${t.id})">
+        <span class="tkt-badge ${esc(t.type)}">${tktBadgeLabel(t.type)}</span>
+        <span class="tkt-subject">${esc(t.subject || '(tanpa judul)')}${showUser ? ' · <span class=\"muted\">' + esc(t.username) + '</span>' : ''}</span>
+        <span class="tkt-status ${esc(t.status)}">${tktStatusLabel(t.status)}</span>
+        <span class="tkt-meta">${when}</span>
+    </div>`;
+}
+
+async function loadMyTickets() {
+    const box = document.getElementById('tkt-my-list');
+    if (!box) return;
+    if (!_authToken) { box.innerHTML = '<span class="muted" style="font-size:12px">Login untuk melihat tiketmu.</span>'; return; }
+    try {
+        const d = await fetchJSON('/api/tickets', { headers: authHeaders() });
+        const rows = d.tickets || [];
+        box.innerHTML = rows.length
+            ? rows.map(t => ticketRowHtml(t, false)).join('')
+            : '<span class="muted" style="font-size:12px">Belum ada tiket. Buat satu di atas!</span>';
+    } catch (e) { box.innerHTML = '<span class="muted" style="font-size:12px">Gagal memuat tiket.</span>'; }
+}
+
+function adminTktFilter(s) {
+    _adminTktFilter = s;
+    document.querySelectorAll('#admin-tkt-filter .pill').forEach(b =>
+        b.classList.toggle('active', b.dataset.s === s));
+    loadAdminTickets();
+}
+
+async function loadAdminTickets() {
+    const box = document.getElementById('admin-tkt-list');
+    if (!box || !_authIsAdmin) return;
+    try {
+        const q = _adminTktFilter ? ('?status=' + _adminTktFilter) : '';
+        const d = await fetchJSON('/api/tickets' + q, { headers: authHeaders() });
+        const rows = d.tickets || [];
+        box.innerHTML = rows.length
+            ? rows.map(t => ticketRowHtml(t, true)).join('')
+            : '<span class="muted" style="font-size:12px">Tidak ada tiket.</span>';
+    } catch (e) { box.innerHTML = ''; }
+}
+
+async function openTicket(id) {
+    try {
+        const d = await fetchJSON('/api/tickets/' + id, { headers: authHeaders() });
+        _tktCurrentId = id;
+        const t = d.ticket;
+        document.getElementById('tkt-thread-title').textContent = tktBadgeLabel(t.type) + ' — ' + (t.subject || 'Tiket #' + id);
+        document.getElementById('tkt-thread-meta').textContent =
+            'Oleh ' + t.username + ' · Status: ' + tktStatusLabel(t.status);
+        const msgsBox = document.getElementById('tkt-thread-messages');
+        msgsBox.innerHTML = (d.messages || []).map(m => `
+            <div class="tkt-msg ${m.sender === 'admin' ? 'admin' : ''}">
+                <div class="tm-head"><span>${esc(m.username)}${m.sender === 'admin' ? ' 👑' : ''}</span>
+                <span class="muted">${new Date(m.created * 1000).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>
+                <div>${esc(m.message)}</div>
+            </div>`).join('');
+        msgsBox.scrollTop = msgsBox.scrollHeight;
+        document.getElementById('tkt-thread-admin-controls').classList.toggle('hidden', !_authIsAdmin);
+        document.getElementById('ticket-thread-overlay').classList.remove('hidden');
+    } catch (e) {
+        toast(e.message, true);
+    }
+}
+
+function closeTicketThread() {
+    document.getElementById('ticket-thread-overlay').classList.add('hidden');
+    _tktCurrentId = null;
+}
+
+async function sendTicketReply() {
+    if (!_tktCurrentId) return;
+    const input = document.getElementById('tkt-thread-reply');
+    const msg = (input.value || '').trim();
+    if (!msg) return;
+    try {
+        await fetchJSON('/api/tickets/' + _tktCurrentId + '/reply', {
+            method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ message: msg }),
+        });
+        input.value = '';
+        openTicket(_tktCurrentId);
+        loadMyTickets();
+        if (_authIsAdmin) loadAdminTickets();
+    } catch (e) {
+        toast(e.message, true);
+    }
+}
+
+async function tktSetStatus(status) {
+    if (!_tktCurrentId || !_authIsAdmin) return;
+    try {
+        await fetchJSON('/api/tickets/' + _tktCurrentId + '/status', {
+            method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ status }),
+        });
+        openTicket(_tktCurrentId);
+        loadAdminTickets();
+        toast('Status tiket diubah.');
+    } catch (e) {
+        toast(e.message, true);
+    }
+}
+
+/* ============================================================
+   ANNOUNCEMENT — banner info/warning/emergency (kirim: admin saja)
+   ============================================================ */
+function annIcon(t) { return t === 'emergency' ? '🚨' : t === 'warning' ? '⚠️' : 'ℹ️'; }
+
+async function loadAnnouncements() {
+    const stack = document.getElementById('ann-stack');
+    if (!stack) return;
+    try {
+        const d = await fetchJSON('/api/announcements');
+        const rows = d.announcements || [];
+        let dismissed = [];
+        try { dismissed = JSON.parse(localStorage.getItem('umd_ann_dismissed') || '[]'); } catch (e) {}
+        const visible = rows.filter(a => !dismissed.includes(a.id));
+        // urutkan: emergency dulu, lalu warning, lalu info
+        const order = { emergency: 0, warning: 1, info: 2 };
+        visible.sort((a, b) => (order[a.type] ?? 3) - (order[b.type] ?? 3));
+        stack.innerHTML = visible.map(a => `
+            <div class="ann-banner ${esc(a.type)}" data-id="${a.id}">
+                <span class="ann-ic">${annIcon(a.type)}</span>
+                <div class="ann-body">
+                    <div class="ann-title">${esc(a.title)}</div>
+                    <div>${esc(a.message)}</div>
+                </div>
+                <button class="ann-x" onclick="dismissAnnouncement(${a.id})" aria-label="Tutup">✕</button>
+            </div>`).join('');
+    } catch (e) { /* abaikan */ }
+}
+
+function dismissAnnouncement(id) {
+    let dismissed = [];
+    try { dismissed = JSON.parse(localStorage.getItem('umd_ann_dismissed') || '[]'); } catch (e) {}
+    if (!dismissed.includes(id)) dismissed.push(id);
+    localStorage.setItem('umd_ann_dismissed', JSON.stringify(dismissed));
+    const el = document.querySelector('.ann-banner[data-id="' + id + '"]');
+    if (el) el.remove();
+}
+
+function annSetType(t) {
+    _annType = t;
+    document.querySelectorAll('#ann-type-pills .pill').forEach(b =>
+        b.classList.toggle('active', b.dataset.t === t));
+}
+
+async function submitAnnouncement() {
+    const title = (document.getElementById('ann-title').value || '').trim();
+    const msg = (document.getElementById('ann-msg').value || '').trim();
+    const status = document.getElementById('ann-status');
+    if (!title || !msg) { toast('Isi judul & pesan dulu.', true); return; }
+    status.textContent = 'Mengirim…';
+    try {
+        await fetchJSON('/api/announcements', {
+            method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ type: _annType, title, message: msg }),
+        });
+        status.textContent = 'Terkirim!';
+        document.getElementById('ann-title').value = '';
+        document.getElementById('ann-msg').value = '';
+        loadAnnouncements();
+        loadAdminAnnouncements();
+        setTimeout(() => { status.textContent = ''; }, 3000);
+    } catch (e) {
+        status.textContent = '';
+        toast(e.message, true);
+    }
+}
+
+async function loadAdminAnnouncements() {
+    const box = document.getElementById('ann-manage-list');
+    if (!box || !_authIsAdmin) return;
+    try {
+        const d = await fetchJSON('/api/announcements');
+        const rows = d.announcements || [];
+        box.innerHTML = rows.length
+            ? rows.map(a => `<div class="ann-manage-row">
+                <span>${annIcon(a.type)}</span>
+                <span>${esc(a.title)}</span>
+                <span class="muted">${new Date(a.created * 1000).toLocaleDateString('id-ID')}</span>
+                <button class="amr-x" onclick="deleteAnnouncement(${a.id})">Hapus</button>
+              </div>`).join('')
+            : '<span class="muted" style="font-size:12px">Belum ada announcement.</span>';
+    } catch (e) { box.innerHTML = ''; }
+}
+
+async function deleteAnnouncement(id) {
+    try {
+        await fetchJSON('/api/announcements/' + id, { method: 'DELETE', headers: authHeaders() });
+        loadAdminAnnouncements();
+        loadAnnouncements();
+        toast('Announcement dihapus.');
     } catch (e) {
         toast(e.message, true);
     }
@@ -2726,6 +2979,8 @@ checkAuth().then(() => {
 loadNewsSetup();
 loadPlatformRequests();
 loadFeedback();
+loadAnnouncements();
+setInterval(loadAnnouncements, 60000);
 loadStats();
 setInterval(loadStats, 30000);
 
@@ -2756,4 +3011,6 @@ setInterval(() => updateNewsLive(), 30000);
     const ap = document.getElementById('auth-pass');
     if (au) au.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') doAuth(); });
     if (ap) ap.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') doAuth(); });
+    const tr = document.getElementById('tkt-thread-reply');
+    if (tr) tr.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') sendTicketReply(); });
 })();

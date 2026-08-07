@@ -208,6 +208,32 @@ def db_init():
             page TEXT,
             created REAL
         );
+        CREATE TABLE IF NOT EXISTS tickets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            username TEXT,
+            type TEXT,
+            subject TEXT,
+            status TEXT DEFAULT 'open',
+            created REAL,
+            updated REAL
+        );
+        CREATE TABLE IF NOT EXISTS ticket_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_id INTEGER,
+            sender TEXT,
+            username TEXT,
+            message TEXT,
+            created REAL
+        );
+        CREATE TABLE IF NOT EXISTS announcements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            type TEXT,
+            title TEXT,
+            message TEXT,
+            created_by TEXT,
+            created REAL
+        );
         ''')
         # Migrasi ringan: kolom baru untuk chat (reply & attachment).
         # CREATE TABLE IF NOT EXISTS tidak menambah kolom → cek & ALTER manual.
@@ -228,6 +254,37 @@ def db_init():
 
 
 db_init()
+
+# ============================================================================
+# ADMIN — satu akun pemilik (owner) yang bisa kirim announcement & balas tiket
+# ============================================================================
+# Username admin ditentukan oleh KONSTANTA di sini (bukan kolom DB) supaya
+# tidak ada cara bagi user lain untuk "menjadi admin" lewat signup biasa —
+# hak admin murni berdasarkan kecocokan username persis dengan string ini.
+ADMIN_USERNAME = '𝙰𝙷𝚂𝙰𝙽 - 👑𝐎𝐖𝐍𝐄𝐑👑'
+ADMIN_DEFAULT_PASSWORD = 'ahsanyoutube8'
+
+
+def _ensure_admin_account():
+    """Buat akun admin otomatis kalau belum ada (sekali saat server start).
+    Kalau sudah ada (mis. sudah pernah signup / password sudah diganti),
+    JANGAN disentuh — supaya password yang sudah diganti pemilik tidak
+    ketimpa balik ke default."""
+    try:
+        rows = db_query("SELECT id FROM users WHERE username=?", (ADMIN_USERNAME,))
+        if rows:
+            return
+        salt, digest = hash_password(ADMIN_DEFAULT_PASSWORD)
+        db_exec(
+            "INSERT INTO users (username, pass_hash, salt, is_guest, created) VALUES (?,?,?,0,?)",
+            (ADMIN_USERNAME, digest, salt, time.time()))
+        print('[ADMIN] Akun admin otomatis dibuat: %s' % ADMIN_USERNAME)
+    except Exception as e:
+        print('[ADMIN] Gagal membuat akun admin otomatis:', e)
+
+
+def is_admin_user(user):
+    return bool(user) and user['username'] == ADMIN_USERNAME
 
 
 def db_query(sql, args=()):
@@ -255,6 +312,9 @@ def hash_password(password, salt=None):
 def verify_password(password, salt, expected):
     _, digest = hash_password(password, salt)
     return hmac.compare_digest(digest, expected)
+
+
+_ensure_admin_account()
 
 
 def create_session(user_id):
@@ -2035,6 +2095,45 @@ XHS_SESSION = {}
 XHS_SESSION_LOCK = threading.Lock()
 
 
+def _xhs_extract_set_cookie(resp, name):
+    """Ambil nilai satu cookie dari response 'set-cookie', KOMPATIBEL dengan
+    curl_cffi (Headers.get_list ada) MAUPUN requests biasa (CaseInsensitiveDict
+    TIDAK punya get_list — dulu ini bikin AttributeError yang tertelan oleh
+    'except Exception: pass' di pemanggil, sehingga sesi RedNote SELALU gagal
+    diam-diam setiap kali fallback ke `requests` terpakai, mis. saat curl_cffi
+    tidak tersedia/gagal di Termux arm64). Coba beberapa cara berurutan:
+      1) response.cookies (requests & curl_cffi sama-sama mem-parsing ini)
+      2) headers.get_list('set-cookie')  (curl_cffi)
+      3) raw.headers.get_all('Set-Cookie')  (requests → urllib3)
+      4) header 'set-cookie' tunggal (fallback terakhir)
+    """
+    try:
+        v = resp.cookies.get(name)
+        if v:
+            return v
+    except Exception:
+        pass
+    try:
+        for sc in resp.headers.get_list('set-cookie'):
+            if sc.strip().startswith(name + '='):
+                return sc.split(';')[0].split('=', 1)[1]
+    except Exception:
+        pass
+    try:
+        for sc in resp.raw.headers.get_all('Set-Cookie'):
+            if sc.strip().startswith(name + '='):
+                return sc.split(';')[0].split('=', 1)[1]
+    except Exception:
+        pass
+    try:
+        sc = resp.headers.get('set-cookie') or ''
+        if sc.strip().startswith(name + '='):
+            return sc.split(';')[0].split('=', 1)[1]
+    except Exception:
+        pass
+    return None
+
+
 def _xhs_sign(method, uri, cookies, payload=None, params=None):
     """Tanda tangan x-s/x-t/x-rap-param via xhshow (pure Python)."""
     try:
@@ -2077,10 +2176,7 @@ def _xhs_session():
             except Exception:
                 r = requests.post('https://edith.xiaohongshu.com/api/sns/web/v1/login/activate',
                                   json=payload, headers=headers, cookies=cookies, timeout=25)
-            ws = None
-            for sc in r.headers.get_list('set-cookie'):
-                if sc.strip().startswith('web_session='):
-                    ws = sc.split(';')[0].split('=', 1)[1]
+            ws = _xhs_extract_set_cookie(r, 'web_session')
             if ws:
                 cookies['web_session'] = ws
                 cookies['_ts'] = time.time()
@@ -4292,11 +4388,12 @@ def api_thumbnail():
 # ============================================================================
 def _auth_payload(user):
     if not user:
-        return {'authenticated': False, 'username': 'Tamu', 'is_guest': False}
+        return {'authenticated': False, 'username': 'Tamu', 'is_guest': False, 'is_admin': False}
     return {
         'authenticated': True,
         'username': user['username'],
         'is_guest': bool(user['is_guest']),
+        'is_admin': is_admin_user(user),
     }
 
 
@@ -4551,6 +4648,12 @@ def api_platform_request():
     user = _auth_from_request()
     db_exec("INSERT INTO platform_requests (username, platform, created) VALUES (?,?,?)",
             (get_username(user), plat, time.time()))
+    # Usulan juga jadi tiket (type=platform) supaya admin bisa balas
+    # langsung ke pengusul ("kapan platform X ditambahkan", dsb).
+    try:
+        _create_ticket(user, 'platform', plat, 'Usulan platform baru: %s' % plat)
+    except Exception:
+        pass
     return jsonify({'ok': True})
 
 
@@ -5284,7 +5387,176 @@ def api_feedback():
     page = (data.get('page') or '')[:40]
     db_exec("INSERT INTO feedback (user_id, username, message, page, created) VALUES (?,?,?,?,?)",
             (user_id, username, message, page, time.time()))
-    return jsonify({'ok': True, 'message': 'Terima kasih! Laporanmu sudah masuk. 🙏'})
+    # Setiap laporan lewat kotak "Laporan Bug/Saran" JUGA otomatis jadi tiket
+    # (percakapan dua arah dengan admin) — supaya user bisa dibalas.
+    tkt_type = (data.get('type') or 'feedback')
+    if tkt_type not in ('bug', 'feedback', 'platform'):
+        tkt_type = 'feedback'
+    try:
+        _create_ticket(user, tkt_type, message[:80], message)
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'message': 'Terima kasih! Laporanmu sudah masuk, dan bisa dibalas admin di tab Tiket. 🙏'})
+
+
+# ============================================================================
+# TIKET — percakapan dua arah user <-> admin (bug report / feedback / usulan
+# platform). Setiap tiket = 1 thread pesan (mirip chat support).
+# ============================================================================
+def _create_ticket(user, ttype, subject, first_message):
+    uid = user['id'] if user else None
+    uname = get_username(user)
+    now = time.time()
+    tid = db_exec(
+        "INSERT INTO tickets (user_id, username, type, subject, status, created, updated) "
+        "VALUES (?,?,?,?,'open',?,?)",
+        (uid, uname, ttype, (subject or '')[:200], now, now))
+    db_exec(
+        "INSERT INTO ticket_messages (ticket_id, sender, username, message, created) "
+        "VALUES (?,?,?,?,?)",
+        (tid, 'user', uname, first_message, now))
+    return tid
+
+
+def _ticket_visible_to(ticket_row, user):
+    """Pemilik tiket ATAU admin boleh melihat/membalas."""
+    if is_admin_user(user):
+        return True
+    if not user:
+        return False
+    return ticket_row['user_id'] == user['id']
+
+
+@app.route('/api/tickets', methods=['GET', 'POST'])
+def api_tickets():
+    user = _auth_from_request()
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        ttype = (data.get('type') or 'feedback').strip().lower()
+        if ttype not in ('bug', 'feedback', 'platform'):
+            ttype = 'feedback'
+        message = (data.get('message') or '').strip()
+        subject = (data.get('subject') or '').strip()
+        if not message:
+            return jsonify({'error': 'Tulis pesannya dulu.'}), 400
+        if len(message) > 3000:
+            return jsonify({'error': 'Pesan terlalu panjang (maks 3000 karakter).'}), 400
+        tid = _create_ticket(user, ttype, subject or message[:80], message)
+        return jsonify({'ok': True, 'ticket_id': tid,
+                        'message': 'Tiket terkirim ke admin. Kamu bisa lihat balasannya di sini.'})
+    # GET — admin lihat SEMUA tiket, user biasa lihat tiket MILIKNYA saja
+    if is_admin_user(user):
+        status_filter = (request.args.get('status') or '').strip()
+        if status_filter in ('open', 'answered', 'closed'):
+            rows = db_query(
+                "SELECT * FROM tickets WHERE status=? ORDER BY updated DESC LIMIT 200",
+                (status_filter,))
+        else:
+            rows = db_query("SELECT * FROM tickets ORDER BY updated DESC LIMIT 200")
+    else:
+        if not user:
+            return jsonify({'ok': True, 'tickets': []})
+        rows = db_query(
+            "SELECT * FROM tickets WHERE user_id=? ORDER BY updated DESC LIMIT 100",
+            (user['id'],))
+    return jsonify({'ok': True, 'tickets': [dict(r) for r in rows]})
+
+
+@app.route('/api/tickets/<int:tid>', methods=['GET'])
+def api_ticket_detail(tid):
+    user = _auth_from_request()
+    rows = db_query("SELECT * FROM tickets WHERE id=?", (tid,))
+    if not rows:
+        return jsonify({'error': 'Tiket tidak ditemukan.'}), 404
+    ticket = rows[0]
+    if not _ticket_visible_to(ticket, user):
+        return jsonify({'error': 'Kamu tidak punya akses ke tiket ini.'}), 403
+    msgs = db_query(
+        "SELECT id, sender, username, message, created FROM ticket_messages "
+        "WHERE ticket_id=? ORDER BY id ASC", (tid,))
+    return jsonify({'ok': True, 'ticket': dict(ticket), 'messages': [dict(m) for m in msgs]})
+
+
+@app.route('/api/tickets/<int:tid>/reply', methods=['POST'])
+def api_ticket_reply(tid):
+    user = _auth_from_request()
+    rows = db_query("SELECT * FROM tickets WHERE id=?", (tid,))
+    if not rows:
+        return jsonify({'error': 'Tiket tidak ditemukan.'}), 404
+    ticket = rows[0]
+    if not _ticket_visible_to(ticket, user):
+        return jsonify({'error': 'Kamu tidak punya akses ke tiket ini.'}), 403
+    admin = is_admin_user(user)
+    if ticket['status'] == 'closed' and not admin:
+        return jsonify({'error': 'Tiket ini sudah ditutup. Buat tiket baru kalau masih ada masalah.'}), 400
+    data = request.get_json(silent=True) or {}
+    message = (data.get('message') or '').strip()
+    if not message:
+        return jsonify({'error': 'Tulis balasannya dulu.'}), 400
+    if len(message) > 3000:
+        return jsonify({'error': 'Pesan terlalu panjang (maks 3000 karakter).'}), 400
+    now = time.time()
+    sender = 'admin' if admin else 'user'
+    uname = get_username(user)
+    db_exec(
+        "INSERT INTO ticket_messages (ticket_id, sender, username, message, created) "
+        "VALUES (?,?,?,?,?)", (tid, sender, uname, message, now))
+    new_status = 'answered' if admin else 'open'
+    db_exec("UPDATE tickets SET status=?, updated=? WHERE id=?", (new_status, now, tid))
+    return jsonify({'ok': True})
+
+
+@app.route('/api/tickets/<int:tid>/status', methods=['POST'])
+def api_ticket_status(tid):
+    user = _auth_from_request()
+    if not is_admin_user(user):
+        return jsonify({'error': 'Hanya admin yang bisa mengubah status tiket.'}), 403
+    data = request.get_json(silent=True) or {}
+    status = (data.get('status') or '').strip()
+    if status not in ('open', 'answered', 'closed'):
+        return jsonify({'error': 'Status tidak valid.'}), 400
+    rows = db_query("SELECT id FROM tickets WHERE id=?", (tid,))
+    if not rows:
+        return jsonify({'error': 'Tiket tidak ditemukan.'}), 404
+    db_exec("UPDATE tickets SET status=?, updated=? WHERE id=?", (status, time.time(), tid))
+    return jsonify({'ok': True})
+
+
+# ============================================================================
+# ANNOUNCEMENT — hanya admin (pemilik) yang bisa mengirim. 3 tipe: info,
+# warning, emergency. Ditampilkan sebagai banner di semua halaman.
+# ============================================================================
+@app.route('/api/announcements', methods=['GET', 'POST'])
+def api_announcements():
+    if request.method == 'GET':
+        rows = db_query(
+            "SELECT id, type, title, message, created_by, created FROM announcements "
+            "ORDER BY id DESC LIMIT 20")
+        return jsonify({'ok': True, 'announcements': [dict(r) for r in rows]})
+    user = _auth_from_request()
+    if not is_admin_user(user):
+        return jsonify({'error': 'Hanya admin yang bisa mengirim announcement.'}), 403
+    data = request.get_json(silent=True) or {}
+    atype = (data.get('type') or 'info').strip().lower()
+    if atype not in ('info', 'warning', 'emergency'):
+        return jsonify({'error': 'Tipe announcement tidak valid (info/warning/emergency).'}), 400
+    title = (data.get('title') or '').strip()[:150]
+    message = (data.get('message') or '').strip()[:2000]
+    if not title or not message:
+        return jsonify({'error': 'Judul & pesan announcement wajib diisi.'}), 400
+    aid = db_exec(
+        "INSERT INTO announcements (type, title, message, created_by, created) VALUES (?,?,?,?,?)",
+        (atype, title, message, user['username'], time.time()))
+    return jsonify({'ok': True, 'id': aid})
+
+
+@app.route('/api/announcements/<int:aid>', methods=['DELETE'])
+def api_announcement_delete(aid):
+    user = _auth_from_request()
+    if not is_admin_user(user):
+        return jsonify({'error': 'Hanya admin yang bisa menghapus announcement.'}), 403
+    db_exec("DELETE FROM announcements WHERE id=?", (aid,))
+    return jsonify({'ok': True})
 
 
 if __name__ == '__main__':
