@@ -1408,3 +1408,68 @@ select#format-select:focus { border-color: rgba(99,102,241,.6); box-shadow: 0 0 
 
     .lyrics-panel, .queue-panel { right: 10px; bottom: 118px; width: calc(100vw - 20px); max-height: 62vh; }
 }
+
+/* ============================================================
+   UI v48 — ikon SVG pengganti emoji & kanal live
+   ============================================================ */
+.pill .ic { width: 13px; height: 13px; vertical-align: -2px; }
+.tkt-ic { display: inline-flex; vertical-align: -1px; margin-right: 1px; }
+.tkt-ic .ic { width: 11px; height: 11px; }
+#tkt-thread-title .tkt-ic .ic { width: 13px; height: 13px; }
+.ann-banner .ann-ic .ic { width: 17px; height: 17px; }
+.ann-banner .ann-x .ic { width: 13px; height: 13px; }
+.ann-manage-row .ic { width: 14px; height: 14px; }
+.rec-badge .ic { width: 14px; height: 14px; vertical-align: -2px; }
+.tm-crown, .uc-crown { display: inline-flex; vertical-align: -1px; }
+.tm-crown .ic, .uc-crown .ic { width: 12px; height: 12px; color: #f59e0b; }
+.brand-sub .ic { width: 12px; height: 12px; color: #f59e0b; vertical-align: -2px; }
+.footer .ic { width: 12px; height: 12px; color: #f59e0b; vertical-align: -2px; }
+.modal-x .ic { width: 15px; height: 15px; }
+.crb-x .ic { width: 13px; height: 13px; }
+.q-x .ic { width: 13px; height: 13px; }
+.cm-file-ic { display: inline-flex; vertical-align: -3px; }
+.cm-file-ic .ic { width: 16px; height: 16px; }
+/* sorot pesan saat kutipan balasan diklik (lompat ke pesan asli) */
+.chat-msg.flash { animation: chatFlash 1.5s ease; border-radius: 10px; }
+@keyframes chatFlash {
+    0%, 100% { background: transparent; }
+    25% { background: rgba(99, 102, 241, .18); }
+}
+
+/* ============================================================
+   UI v49 — Konversi File & HD Enhancer
+   ============================================================ */
+.conv-drop {
+    border: 2px dashed var(--border-strong);
+    border-radius: 16px;
+    padding: 30px 18px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    text-align: center; cursor: pointer;
+    background: var(--surface-2);
+    transition: border-color .15s ease, background .15s ease, transform .1s ease;
+    user-select: none;
+}
+.conv-drop:hover, .conv-drop:focus-visible { border-color: var(--accent, #6366f1); background: rgba(99,102,241,.06); }
+.conv-drop.dragover {
+    border-color: var(--accent, #6366f1);
+    background: rgba(99,102,241,.12);
+    transform: scale(1.01);
+}
+.conv-drop b { font-size: 15px; }
+.conv-drop-ic { width: 38px; height: 38px; color: var(--accent, #6366f1); margin-bottom: 2px; }
+.conv-file-row {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface-2); border: 1px solid var(--border-strong);
+    border-radius: 12px; padding: 10px 12px; margin-bottom: 12px;
+}
+.conv-file-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.conv-file-meta b {
+    font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.conv-file-meta .muted { font-size: 11.5px; }
+.conv-file-ic { display: inline-flex; flex-shrink: 0; color: var(--accent, #6366f1); }
+.conv-file-ic .ic { width: 20px; height: 20px; }
+.conv-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.conv-lbl { font-size: 12px; font-weight: 700; color: var(--muted); min-width: 108px; }
+#conv-imgq { accent-color: var(--accent, #6366f1); }
+.conv-drop input.hidden { display: none; }

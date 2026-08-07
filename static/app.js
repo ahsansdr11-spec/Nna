@@ -2,7 +2,7 @@
 
 // Nomor versi UI (build). NAIKKAN 1 tiap rombak frontend — tampil di footer
 // supaya bisa dicek tanpa buka inspect element. Kunci dari "cara ngecek bump".
-const UI_VERSION = 47;
+const UI_VERSION = 49;
 
 const $ = (s) => document.querySelector(s);
 
@@ -35,6 +35,18 @@ function esc(str) {
     return String(str == null ? '' : str)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/* Escape konteks BERBEDA dari esc(): untuk STRING JAVASCRIPT yang ditanam
+   di dalam atribut onclick inline. esc() memakai entitas HTML — tapi atribut
+   HTML men-decode entitas SEBELUM JS mengkompilasi, jadi entitas tidak
+   melindungi string JS. jsq() mengubah karakter non-aman jadi escape \xNN
+   murni: HTML membaca apa adanya, JS yang men-decode → mustahil memutus
+   string/menyuntik kode (bahkan dari metadata pihak ketiga seperti
+   nomor chapter MangaDex). */
+function jsq(str) {
+    return String(str == null ? '' : str).replace(/[^\w .,\-]/g, c =>
+        '\\x' + c.charCodeAt(0).toString(16).padStart(2, '0'));
 }
 
 async function fetchJSON(url, opts) {
@@ -102,6 +114,22 @@ const IC = {
     check:    '<svg class="ic" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>',
     play:     '<svg class="ic" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',
     pause:    '<svg class="ic" viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>',
+    /* ikon pengganti emoji — gambar vektor asli, bukan karakter emoji */
+    x:        '<svg class="ic" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>',
+    crown:    '<svg class="ic" viewBox="0 0 24 24"><path d="M3 17l-1-9 5 3 5-7 5 7 5-3-1 9H3zm0 2h18v2H3v-2z" style="fill:currentColor;stroke:none"/></svg>',
+    bug:      '<svg class="ic" viewBox="0 0 24 24"><path d="M8 3l2 2m4-2l-2 2m-2 0h4a4 4 0 014 4v1h3m-3 4h3m-17 0h3m-3-4h3m3-5v10a4 4 0 008 0V9a4 4 0 00-8 0zm-6 9l2-2m14 2l-2-2M4 6l3 2m16-2l-3 2"/></svg>',
+    chatBub:  '<svg class="ic" viewBox="0 0 24 24"><path d="M21 12a8 8 0 01-8 8H4l2-3a8 8 0 1115-5z"/></svg>',
+    plus:     '<svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+    info:     '<svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg>',
+    warn:     '<svg class="ic" viewBox="0 0 24 24"><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0zM12 9v4m0 4h.01"/></svg>',
+    alert:    '<svg class="ic" viewBox="0 0 24 24"><path d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 00-4-5.7V5a2 2 0 10-4 0v.3A6 6 0 006 11v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/><path d="M6.5 3.5L4 1m13.5 2.5L20 1" style="display:none"/></svg>',
+    book:     '<svg class="ic" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 006.5 22H20V2H6.5A2.5 2.5 0 004 4.5v15z"/></svg>',
+    flame:    '<svg class="ic" viewBox="0 0 24 24"><path d="M12 22c4 0 7-2.7 7-6.5 0-3-2-5.5-3.5-7C14 6.8 13 5 13 2c-3 2-5 4.7-5 8 0 1.2.2 2.3.7 3.2L8 12c-1.3 1.3-2 3-2 4.5C6 19.3 9 22 12 22z"/></svg>',
+    doc:      '<svg class="ic" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM14 2v6h6M9 13h6M9 17h4"/></svg>',
+    clip:     '<svg class="ic" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>',
+    note:     '<svg class="ic" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13M9 18a3 3 0 11-6 0 3 3 0 016 0zm12-2a3 3 0 11-6 0 3 3 0 016 0z"/></svg>',
+    inbox:    '<svg class="ic" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2M5.5 5.1L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.5-6.9A2 2 0 0016.7 4H7.3a2 2 0 00-1.8 1.1z"/></svg>',
+    ticketIc: '<svg class="ic" viewBox="0 0 24 24"><path d="M3 7h18v6a2 2 0 00-2 2 2 2 0 002 2v0H3v0a2 2 0 002-2 2 2 0 00-2-2V7z"/></svg>',
 };
 
 /* ---------- View switching ---------- */
@@ -112,6 +140,8 @@ let activePolls = new Set();
 function showView(name) {
     $('#view-home').classList.toggle('hidden', name !== 'home');
     $('#view-music').classList.toggle('hidden', name !== 'music');
+    $('#view-convert').classList.toggle('hidden', name !== 'convert');
+    $('#view-enhance').classList.toggle('hidden', name !== 'enhance');
     $('#view-manga').classList.toggle('hidden', name !== 'manga');
     $('#view-news').classList.toggle('hidden', name !== 'news');
     $('#view-chat').classList.toggle('hidden', name !== 'chat');
@@ -140,13 +170,13 @@ function showView(name) {
     }
     if (name === 'music') {
         //  - kartu progress musik yang sudah tidak di-poll (nyangkut) → buang
-        const mp = $('#music-progress');
-        if (mp) {
+        //    (semua kartu — dulu hanya satu yang ke-cek karena id dobel)
+        document.querySelectorAll('#music-results .progress-card').forEach(mp => {
             const jid = mp.dataset.jobId || mp.dataset.jobid;
             if (!jid || !activePolls.has(jid)) {
                 mp.remove();
             }
-        }
+        });
         //  - kartu done yang sudah tidak aktif → buang
         document.querySelectorAll('#music-results .progress-card[data-jobdone="1"]').forEach(el => el.remove());
         // CATATAN: TIDAK ada auto-focus di sini — keyboard tidak boleh
@@ -292,7 +322,7 @@ async function init() {
         grid.innerHTML = data.platforms.map(p => {
             const brand = PLATFORM_BRAND[p.key] || '#6366f1';
             return `<div class="platform-card" data-key="${esc(p.key)}" style="--brand:${brand}"
-                     title="Pilih ${esc(p.name)} sebagai platform (manual)" onclick="pickPlatform('${esc(p.key)}', '${esc(p.name)}')">
+                     title="Pilih ${esc(p.name)} sebagai platform (manual)" onclick="pickPlatform('${jsq(p.key)}', '${jsq(p.name)}')">
                 <div class="pc-logo"><img src="${esc(p.icon)}" alt="${esc(p.name)}" loading="lazy"
                      onerror="this.src='/static/img/logo_64.png'"></div>
                 <span class="name">${esc(p.name)}</span>
@@ -305,7 +335,7 @@ async function init() {
         const menu = document.getElementById('plat-menu');
         if (menu) {
             menu.insertAdjacentHTML('beforeend', data.platforms.map(p =>
-                `<button type="button" class="dd-opt" data-v="${esc(p.key)}" onclick="ddPick('${esc(p.key)}')" role="option">
+                `<button type="button" class="dd-opt" data-v="${esc(p.key)}" onclick="ddPick('${jsq(p.key)}')" role="option">
                     <span class="dd-opt-ic"><img src="${esc(p.icon)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"></span>
                     <span class="dd-opt-t">${esc(p.name)}</span>
                     <span class="dd-opt-d">${esc(p.name)}</span>
@@ -324,7 +354,7 @@ async function init() {
         const qc = document.getElementById('quick-chips');
         if (qc) {
             qc.insertAdjacentHTML('beforeend', data.platforms.map(p =>
-                `<button class="qc" data-key="${esc(p.key)}" onclick="quickFill('${esc(p.key)}', '${esc(p.name)}')">
+                `<button class="qc" data-key="${esc(p.key)}" onclick="quickFill('${jsq(p.key)}', '${jsq(p.name)}')">
                     <img src="${esc(p.icon)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
                     ${esc(p.name)}
                 </button>`).join(''));
@@ -686,11 +716,19 @@ async function downloadSelected() {
         return;
     }
     const val = sel.value;
-    if (val.startsWith('custom:')) await beginDownload('custom', val.slice(7));
-    else await beginDownload(val, null);
+    if (val.startsWith('custom:')) {
+        const fid = val.slice(7);
+        // Format mentah VIDEO-ONLY → minta server menggabung audio terbaik
+        // (kalau tidak, hasilnya film bisu tanpa suara).
+        const f = (currentInfo.formats || []).find(x => x.format_id === fid);
+        const vOnly = !!(f && f.vcodec && f.vcodec !== 'none' && (!f.acodec || f.acodec === 'none'));
+        await beginDownload('custom', fid, { merge_audio: vOnly });
+        return;
+    }
+    await beginDownload(val, null);
 }
 
-async function beginDownload(mode, formatId) {
+async function beginDownload(mode, formatId, extra) {
     if (!currentInfo) { toast('Analisis URL dulu ya!', true); return; }
     dlStart = Date.now();
     // Buat kartu progress BARU per download (tidak menimpa kartu lama) —
@@ -741,6 +779,7 @@ async function beginDownload(mode, formatId) {
                 url: currentInfo.webpage_url,
                 mode: mode,
                 format_id: formatId || undefined,
+                merge_audio: (extra && extra.merge_audio) ? 1 : 0,
                 title: currentInfo.title || '',
                 resolution: resolution,
                 platform: platSel || undefined,
@@ -838,8 +877,10 @@ function saveFile(jobId, btn) {
     document.body.appendChild(a);
     a.click();
     a.remove();
-    // Setelah file tersimpan, tutup kartu "Selesai" (yang berisi tombol ini)
-    dismissCard(btn);
+    // Setelah file tersimpan, tutup kartu "Selesai" (yang berisi tombol ini).
+    // HANYA kalau btn ada — kalau dipanggil dari daftar antrean musik (tanpa
+    // btn), jangan sampai ikut menutup kartu progress Beranda yang sedang jalan.
+    if (btn) dismissCard(btn);
 }
 
 function dismissDoneCard() {
@@ -963,8 +1004,8 @@ function renderSongs(songs) {
             <span class="t-dur">${esc(s.duration_text || '—')}</span>
             <span class="t-actions" onclick="event.stopPropagation()">
                 <button class="btn mini" onclick="musicPlay(${i})" title="Putar">${IC.play} Putar</button>
-                <button class="btn mini" onclick="musicDownload('${esc(s.videoId)}', ${i}, 'mp3')" title="Unduh MP3">${IC.download} MP3</button>
-                <button class="btn mini" onclick="musicDownload('${esc(s.videoId)}', ${i}, 'm4a')" title="Unduh M4A">${IC.download} M4A</button>
+                <button class="btn mini" onclick="musicDownload('${jsq(s.videoId)}', ${i}, 'mp3')" title="Unduh MP3">${IC.download} MP3</button>
+                <button class="btn mini" onclick="musicDownload('${jsq(s.videoId)}', ${i}, 'm4a')" title="Unduh M4A">${IC.download} M4A</button>
                 <button class="btn mini ghost" onclick="openPlaylistPicker(${i}, event)" title="Simpan ke playlist"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
             </span>
         </div>`).join('')}
@@ -997,9 +1038,12 @@ function musicDownload(videoId, i, mode) {
 function beginMusicDownload(videoId, title, mode) {
     mode = mode || 'mp3';
     dlStart = Date.now();
+    // ID UNIK per unduhan — dulu semua kartu musik bernama #music-progress
+    // sehingga unduh 2 lagu bersamaan saling menimpa & polling nyangkut.
+    const mpId = 'music-progress-' + Date.now() + '-' + Math.floor(Math.random() * 1000000);
     const box = $('#music-results');
     box.insertAdjacentHTML('beforeend', `
-        <div class="progress-card" id="music-progress">
+        <div class="progress-card" id="${mpId}">
             <div class="progress-head">
                 <span class="progress-title no-translate">${esc(title)}</span>
                 <span class="progress-status" id="progress-status">Antre</span>
@@ -1015,7 +1059,7 @@ function beginMusicDownload(videoId, title, mode) {
             <p class="progress-msg" id="progress-msg">Memulai unduhan MP3…</p>
             <p class="progress-eta" id="progress-eta"></p>
         </div>`);
-    $('#music-progress').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.getElementById(mpId).scrollIntoView({ behavior: 'smooth', block: 'center' });
 
     const currentInfoBackup = currentInfo;
     currentInfo = {
@@ -1033,10 +1077,10 @@ function beginMusicDownload(videoId, title, mode) {
         }),
     });
     currentInfo = currentInfoBackup;
-    resPromise.then(res => pollJobInto(res.job_id, '#music-progress'))
+    resPromise.then(res => pollJobInto(res.job_id, '#' + mpId))
         .catch(e => {
             toast('Gagal memulai unduhan: ' + e.message, true);
-            const p = $('#music-progress');
+            const p = document.getElementById(mpId);
             if (p) p.remove();
         });
 }
@@ -1117,8 +1161,8 @@ function renderCollectionDetail(d) {
                 <span class="t-dur">${esc(t.duration_text || '—')}</span>
                 <span class="t-actions" onclick="event.stopPropagation()">
                     <button class="btn mini" onclick="playCollectionTrack(${i})" title="Putar">${IC.play} Putar</button>
-                    <button class="btn mini" onclick="downloadCollectionTrack('${esc(t.videoId)}', ${i}, 'mp3')" title="Unduh MP3">${IC.download} MP3</button>
-                    <button class="btn mini primary" onclick="downloadCollectionTrack('${esc(t.videoId)}', ${i}, 'm4a')" title="Unduh M4A">${IC.download} M4A</button>
+                    <button class="btn mini" onclick="downloadCollectionTrack('${jsq(t.videoId)}', ${i}, 'mp3')" title="Unduh MP3">${IC.download} MP3</button>
+                    <button class="btn mini primary" onclick="downloadCollectionTrack('${jsq(t.videoId)}', ${i}, 'm4a')" title="Unduh M4A">${IC.download} M4A</button>
                 </span>
             </div>`).join('')}
         </div>`;
@@ -1173,9 +1217,10 @@ function musicQueueNext() {
     const cur = q.shift();
     window._dlQueue = q;
 
-    // buat kartu progress
+    // buat kartu progress — ID UNIK per lagu (bukan #music-progress yang dobel)
+    const mpId = 'music-progress-' + Date.now() + '-' + Math.floor(Math.random() * 1000000);
     box.insertAdjacentHTML('beforeend', `
-        <div class="progress-card" id="music-progress">
+        <div class="progress-card" id="${mpId}">
             <div class="progress-head">
                 <span class="progress-title no-translate">${esc(cur.title)}</span>
                 <span class="progress-status" id="progress-status">Antre</span>
@@ -1191,25 +1236,26 @@ function musicQueueNext() {
             <p class="progress-msg" id="progress-msg">Mengunduh (${window._dlDone.length + 1}/${window._dlDone.length + q.length + 1})…</p>
             <p class="progress-eta" id="progress-eta"></p>
         </div>`);
-    $('#music-progress').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.getElementById(mpId).scrollIntoView({ behavior: 'smooth', block: 'center' });
 
     fetchJSON('/api/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: 'https://www.youtube.com/watch?v=' + cur.videoId, mode: 'mp3', title: cur.title, resolution: '1080' }),
     }).then(res => {
-        pollMusicQueue(res.job_id, cur.title);
+        pollMusicQueue(res.job_id, cur.title, '#' + mpId);
     }).catch(e => {
         toast('Gagal memulai: ' + e.message, true);
-        const p = $('#music-progress');
+        const p = document.getElementById(mpId);
         if (p) p.remove();
         musicQueueNext();
     });
 }
 
-function pollMusicQueue(jobId, title) {
+function pollMusicQueue(jobId, title, selector) {
+    selector = selector || '#music-progress';
     registerPoll(jobId);
-    const box0 = $('#music-progress');
+    const box0 = document.querySelector(selector);
     if (box0) box0.dataset.jobId = jobId;
     let fails = 0;
     // Timer LOKAL per lagu (bukan variabel global) — supaya antrean musik
@@ -1218,7 +1264,7 @@ function pollMusicQueue(jobId, title) {
         try {
             const j = await fetchJSON('/api/job/' + jobId);
             fails = 0;
-            const box = $('#music-progress');
+            const box = document.querySelector(selector);
             if (!box || box.classList.contains('hidden')) { clearInterval(timer); unregisterPoll(jobId); musicQueueNext(); return; }
             const map = { downloading: 'Mengunduh…', processing: 'Memproses…', done: 'Selesai', error: 'Gagal', queued: 'Antre' };
             box.querySelector('#progress-status').textContent = map[j.status] || j.status;
@@ -1252,7 +1298,7 @@ function pollMusicQueue(jobId, title) {
             if (fails >= 8) {
                 clearInterval(timer);
                 unregisterPoll(jobId);
-                const box = $('#music-progress');
+                const box = document.querySelector(selector);
                 if (box) box.remove();
                 toast('Koneksi terputus sesaat — lanjut ke lagu berikutnya.', true);
                 musicQueueNext();
@@ -1289,8 +1335,8 @@ function renderArtistDetail(d) {
                 <span class="t-dur">${esc(t.duration_text || '—')}</span>
                 <span class="t-actions" onclick="event.stopPropagation()">
                     <button class="btn mini" onclick="playCollectionTrack(${i})" title="Putar">${IC.play} Putar</button>
-                    <button class="btn mini" onclick="downloadCollectionTrack('${esc(t.videoId)}', ${i}, 'mp3')" title="Unduh MP3">${IC.download} MP3</button>
-                    <button class="btn mini primary" onclick="downloadCollectionTrack('${esc(t.videoId)}', ${i}, 'm4a')" title="Unduh M4A">${IC.download} M4A</button>
+                    <button class="btn mini" onclick="downloadCollectionTrack('${jsq(t.videoId)}', ${i}, 'mp3')" title="Unduh MP3">${IC.download} MP3</button>
+                    <button class="btn mini primary" onclick="downloadCollectionTrack('${jsq(t.videoId)}', ${i}, 'm4a')" title="Unduh M4A">${IC.download} M4A</button>
                 </span>
             </div>`).join('')}
         </div>` : ''}
@@ -1337,7 +1383,7 @@ function openPlaylistPicker(i, ev) {
         div.innerHTML = `<div class="pl-picker-head">
                 <b>Simpan ke playlist</b>
                 <span class="pl-picker-song no-translate">${esc(s.title)}</span>
-                <button class="pbtn q-x" onclick="document.getElementById('pl-picker').remove()">✕</button>
+                <button class="pbtn q-x" onclick="document.getElementById('pl-picker').remove()"></button>
             </div>
             <div class="pl-picker-list">
                 ${pls.length ? pls.map(p =>
@@ -1350,7 +1396,7 @@ function openPlaylistPicker(i, ev) {
             </div>`;
     }).catch(e => {
         div.innerHTML = `<div class="pl-picker-head"><b>${esc(e.message)}</b>
-            <button class="pbtn q-x" onclick="document.getElementById('pl-picker').remove()">✕</button></div>`;
+            <button class="pbtn q-x" onclick="document.getElementById('pl-picker').remove()"></button></div>`;
     });
     document.body.appendChild(div);
     const r = (ev && ev.target && ev.target.getBoundingClientRect()) || { bottom: 80, right: 20 };
@@ -1387,7 +1433,7 @@ async function addToPlaylist(pid, i, btn) {
                 video_id: s.videoId, title: s.title, artist: s.artist, thumbnail: s.thumbnail,
             }),
         });
-        toast('Ditambahkan ke playlist 🎵');
+        toast('Ditambahkan ke playlist.');
         const pk = document.getElementById('pl-picker');
         if (pk) pk.remove();
     } catch (e) {
@@ -1404,7 +1450,7 @@ async function showMyPlaylists() {
         stopBusy();
         const pls = d.playlists || [];
         box.innerHTML = `<div class="rec-head">
-            <span class="rec-badge">🎵 Playlist Saya</span>
+            <span class="rec-badge">${IC.note} Playlist Saya</span>
             <span class="rec-sub">${pls.length} playlist</span>
         </div>
         <div class="pl-create-row">
@@ -1436,7 +1482,7 @@ async function createPlaylistFromRow() {
             method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ name }),
         });
-        toast('Playlist dibuat 🎵');
+        toast('Playlist dibuat.');
         showMyPlaylists();
     } catch (e) {
         toast(e.message, true);
@@ -1452,7 +1498,7 @@ async function openPlaylist(pid) {
         const pl = d.playlist || {};
         const items = d.items || [];
         box.innerHTML = `<div class="rec-head">
-            <span class="rec-badge no-translate">🎵 ${esc(pl.name)}</span>
+            <span class="rec-badge no-translate">${IC.note} ${esc(pl.name)}</span>
             <span class="rec-sub">${items.length} lagu</span>
         </div>
         <div class="actions" style="margin-bottom:12px">
@@ -1761,7 +1807,7 @@ function renderLyrics(text, synced) {
         return;
     }
     body.innerHTML = '<div class="lyrics-synced">' +
-        _lyrics.map((x, i) => `<div class="ly-line" data-i="${i}">${esc(x.l || '♪')}</div>`).join('') +
+        _lyrics.map((x, i) => `<div class="ly-line" data-i="${i}">${esc(x.l || '…')}</div>`).join('') +
         '</div>';
     clearInterval(_lyricsTimer);
     _lyricsTimer = setInterval(() => {
@@ -1913,7 +1959,7 @@ function refreshAuthUI() {
     if (_authToken && _authUser) {
         if (loginBtn) loginBtn.classList.add('hidden');
         if (userBox) userBox.classList.remove('hidden');
-        if (nameEl) nameEl.textContent = _authUser + (_authGuest ? ' (tamu)' : '') + (_authIsAdmin ? ' 👑' : '');
+        if (nameEl) nameEl.innerHTML = esc(_authUser) + (_authGuest ? ' (tamu)' : '') + (_authIsAdmin ? ' <span class="uc-crown" title="Admin">' + IC.crown + '</span>' : '');
     } else {
         if (loginBtn) loginBtn.classList.remove('hidden');
         if (userBox) userBox.classList.add('hidden');
@@ -2070,7 +2116,7 @@ async function submitFeedback() {
     try {
         // deteksi halaman aktif untuk konteks laporan
         let page = 'beranda';
-        const views = ['home', 'music', 'manga', 'news', 'chat', 'about'];
+        const views = ['home', 'music', 'convert', 'enhance', 'manga', 'news', 'chat', 'tickets', 'about'];
         for (const v of views) {
             const el = document.getElementById('view-' + v);
             if (el && !el.classList.contains('hidden')) { page = v; break; }
@@ -2096,7 +2142,7 @@ async function loadFeedback() {
         const d = await fetchJSON('/api/feedback');
         const items = d.items || [];
         if (!items.length) {
-            box.innerHTML = '<div class="muted" style="font-size:12px">Belum ada laporan. Jadilah yang pertama! 👑</div>';
+            box.innerHTML = '<div class="muted" style="font-size:12px">Belum ada laporan. Jadilah yang pertama!</div>';
             return;
         }
         box.innerHTML = '<div class="muted" style="font-size:11px;margin-bottom:6px">Laporan terbaru:</div>' +
@@ -2162,8 +2208,11 @@ async function submitTicket() {
     }
 }
 
-function tktBadgeLabel(t) {
-    return t === 'bug' ? '🐞 Bug' : t === 'platform' ? '➕ Platform' : '💬 Feedback';
+function tktBadgeHtml(t) {
+    // Badge jenis tiket dengan ikon SVG asli (bukan emoji)
+    if (t === 'bug') return `<span class="tkt-ic">${IC.bug}</span> Bug`;
+    if (t === 'platform') return `<span class="tkt-ic">${IC.plus}</span> Platform`;
+    return `<span class="tkt-ic">${IC.chatBub}</span> Feedback`;
 }
 function tktStatusLabel(s) {
     return s === 'answered' ? 'Dibalas' : s === 'closed' ? 'Ditutup' : 'Terbuka';
@@ -2172,7 +2221,7 @@ function tktStatusLabel(s) {
 function ticketRowHtml(t, showUser) {
     const when = new Date(t.updated * 1000).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
     return `<div class="ticket-row" onclick="openTicket(${t.id})">
-        <span class="tkt-badge ${esc(t.type)}">${tktBadgeLabel(t.type)}</span>
+        <span class="tkt-badge ${esc(t.type)}">${tktBadgeHtml(t.type)}</span>
         <span class="tkt-subject">${esc(t.subject || '(tanpa judul)')}${showUser ? ' · <span class=\"muted\">' + esc(t.username) + '</span>' : ''}</span>
         <span class="tkt-status ${esc(t.status)}">${tktStatusLabel(t.status)}</span>
         <span class="tkt-meta">${when}</span>
@@ -2212,27 +2261,51 @@ async function loadAdminTickets() {
     } catch (e) { box.innerHTML = ''; }
 }
 
+function renderTicketThread(t, messages, scrollDown) {
+    // Render isi thread tiket — dipakai saat membuka DAN saat refresh live
+    document.getElementById('tkt-thread-title').innerHTML =
+        tktBadgeHtml(t.type) + ' — ' + esc(t.subject || 'Tiket #' + t.id);
+    document.getElementById('tkt-thread-meta').textContent =
+        'Oleh ' + t.username + ' · Status: ' + tktStatusLabel(t.status);
+    const msgsBox = document.getElementById('tkt-thread-messages');
+    const wasAtBottom = (msgsBox.scrollHeight - msgsBox.scrollTop - msgsBox.clientHeight) < 60;
+    const lastId = msgsBox.dataset.lastId || '0';
+    const newLastId = (messages && messages.length) ? String(messages[messages.length - 1].id) : '0';
+    const hasNew = newLastId !== lastId;
+    msgsBox.dataset.lastId = newLastId;
+    msgsBox.innerHTML = (messages || []).map(m => `
+        <div class="tkt-msg ${m.sender === 'admin' ? 'admin' : ''}">
+            <div class="tm-head"><span>${esc(m.username)}${m.sender === 'admin' ? ' <span class="tm-crown" title="Admin">' + IC.crown + '</span>' : ''}</span>
+            <span class="muted">${new Date(m.created * 1000).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>
+            <div>${esc(m.message)}</div>
+        </div>`).join('');
+    // scroll ke bawah saat pertama buka, atau saat ada pesan BARU dan user
+    // memang sudah di bawah (jangan tarik paksa kalau sedang membaca atas)
+    if (scrollDown || (hasNew && wasAtBottom)) msgsBox.scrollTop = msgsBox.scrollHeight;
+}
+
 async function openTicket(id) {
     try {
         const d = await fetchJSON('/api/tickets/' + id, { headers: authHeaders() });
         _tktCurrentId = id;
-        const t = d.ticket;
-        document.getElementById('tkt-thread-title').textContent = tktBadgeLabel(t.type) + ' — ' + (t.subject || 'Tiket #' + id);
-        document.getElementById('tkt-thread-meta').textContent =
-            'Oleh ' + t.username + ' · Status: ' + tktStatusLabel(t.status);
-        const msgsBox = document.getElementById('tkt-thread-messages');
-        msgsBox.innerHTML = (d.messages || []).map(m => `
-            <div class="tkt-msg ${m.sender === 'admin' ? 'admin' : ''}">
-                <div class="tm-head"><span>${esc(m.username)}${m.sender === 'admin' ? ' 👑' : ''}</span>
-                <span class="muted">${new Date(m.created * 1000).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>
-                <div>${esc(m.message)}</div>
-            </div>`).join('');
-        msgsBox.scrollTop = msgsBox.scrollHeight;
+        renderTicketThread(d.ticket, d.messages, true);
         document.getElementById('tkt-thread-admin-controls').classList.toggle('hidden', !_authIsAdmin);
         document.getElementById('ticket-thread-overlay').classList.remove('hidden');
     } catch (e) {
         toast(e.message, true);
     }
+}
+
+/* Refresh thread yang sedang terbuka — dipanggil otomatis oleh kanal live
+   saat tiket dibalas (oleh user lain/admin) tanpa menutup overlay. */
+async function refreshOpenTicket() {
+    if (!_tktCurrentId) return;
+    const overlay = document.getElementById('ticket-thread-overlay');
+    if (!overlay || overlay.classList.contains('hidden')) return;
+    try {
+        const d = await fetchJSON('/api/tickets/' + _tktCurrentId, { headers: authHeaders() });
+        renderTicketThread(d.ticket, d.messages, false);
+    } catch (e) { /* transien — biarkan siklus live berikutnya */ }
 }
 
 function closeTicketThread() {
@@ -2277,7 +2350,12 @@ async function tktSetStatus(status) {
 /* ============================================================
    ANNOUNCEMENT — banner info/warning/emergency (kirim: admin saja)
    ============================================================ */
-function annIcon(t) { return t === 'emergency' ? '🚨' : t === 'warning' ? '⚠️' : 'ℹ️'; }
+/* Ikon announcement — gambar vektor SVG asli (bukan emoji unicode) */
+function annIcon(t) {
+    if (t === 'emergency') return IC.alert;
+    if (t === 'warning') return IC.warn;
+    return IC.info;
+}
 
 async function loadAnnouncements() {
     const stack = document.getElementById('ann-stack');
@@ -2298,7 +2376,7 @@ async function loadAnnouncements() {
                     <div class="ann-title">${esc(a.title)}</div>
                     <div>${esc(a.message)}</div>
                 </div>
-                <button class="ann-x" onclick="dismissAnnouncement(${a.id})" aria-label="Tutup">✕</button>
+                <button class="ann-x" onclick="dismissAnnouncement(${a.id})" aria-label="Tutup">${IC.x}</button>
             </div>`).join('');
     } catch (e) { /* abaikan */ }
 }
@@ -2382,7 +2460,7 @@ let _mangaView = 'home'; // 'home' | 'search' | 'detail' | 'reader' — untuk re
 
 function mangaCardHtml(m) {
     const tags = (m.tags || []).map(t => `<span class="mg-chip">${esc(t)}</span>`).join('');
-    return `<div class="manga-card" onclick="mangaOpen('${m.id}')">
+    return `<div class="manga-card" onclick="mangaOpen('${jsq(m.id)}')">
         <img src="/api/manga-img?url=${encodeURIComponent(m.cover || '')}" loading="lazy"
              onerror="this.style.visibility='hidden'">
         <div class="mc-body">
@@ -2402,12 +2480,12 @@ async function mangaHistoryHtml() {
         const hist = hd.items || [];
         if (!hist.length) return '';
         return `<div class="rec-head" style="margin-top:4px">
-                <span class="rec-badge">📖 Lanjut Baca</span>
+                <span class="rec-badge">${IC.book} Lanjut Baca</span>
                 <span class="rec-sub">${hist.length} manga terakhir · klik untuk lanjut</span>
             </div>
             <div class="manga-grid manga-history-grid">` +
             hist.slice(0, 8).map(h => `
-            <div class="manga-card" onclick="mangaOpen('${h.manga_id}')">
+            <div class="manga-card" onclick="mangaOpen('${jsq(h.manga_id)}')">
                 ${h.cover ? `<img src="/api/manga-img?url=${encodeURIComponent(h.cover)}" loading="lazy" onerror="this.style.visibility='hidden'">` : ''}
                 <div class="mc-body">
                     <div class="mc-title">${esc(h.title)}</div>
@@ -2429,10 +2507,11 @@ async function mangaRecommend() {
             box.innerHTML = `<div class="music-empty"><p>Belum ada rekomendasi.</p></div>`;
             return;
         }
-        const label = _mangaTag ? 'Rekomendasi ' + _mangaTagName : '🔥 Rekomendasi untukmu';
+        const labelIcon = _mangaTag ? '' : IC.flame + ' ';
+        const label = _mangaTag ? 'Rekomendasi ' + _mangaTagName : 'Rekomendasi untukmu';
         const histHtml = await mangaHistoryHtml();
         box.innerHTML = histHtml + `<div class="rec-head">
-            <span class="rec-badge">${esc(label)}</span>
+            <span class="rec-badge">${labelIcon}${esc(label)}</span>
             <span class="rec-sub">${d.results.length} judul populer · klik untuk baca</span>
         </div><div class="manga-grid">` + d.results.map(mangaCardHtml).join('') + `</div>`;
     } catch (e) {
@@ -2474,7 +2553,7 @@ async function mangaInitGenres() {
         const d = await fetchJSON('/api/manga-genres');
         box.innerHTML = `<button class="pill active" data-k="" onclick="mangaSetTag('')">Semua</button>` +
             d.genres.map(g =>
-                `<button class="pill" data-k="${esc(g.key)}" onclick="mangaSetTag('${esc(g.key)}', '${esc(g.name)}')">${esc(g.name)}</button>`).join('');
+                `<button class="pill" data-k="${esc(g.key)}" onclick="mangaSetTag('${jsq(g.key)}', '${jsq(g.name)}')">${esc(g.name)}</button>`).join('');
     } catch (e) { /* biarkan kosong */ }
 }
 
@@ -2524,7 +2603,7 @@ async function mangaOpen(mid) {
             <h3 class="music-cards-head">Chapter (${d.chapters.length})</h3>
             ${d.chapters.length
                 ? `<div class="chapter-list">${d.chapters.slice(0, 80).map(c => `
-                    <div class="chapter-row" onclick="mangaRead('${c.id}', '${esc(String(c.chapter || ''))}', '${esc(c.lang || '')}')">
+                    <div class="chapter-row" onclick="mangaRead('${jsq(c.id)}', '${jsq(c.chapter)}', '${jsq(c.lang)}')">
                         <span class="cr-t">Chapter ${esc(c.chapter || '?')}${c.title ? ' — ' + esc(c.title) : ''}</span>
                         <span class="cr-s">${esc(c.lang || '')} · ${c.pages} halaman</span>
                     </div>`).join('')}</div>`
@@ -2664,7 +2743,7 @@ async function loadNewsSetup() {
         if (!cats.length) return;
         _newsCat = cats[0];
         catsBox.innerHTML = cats.map(c =>
-            `<button class="pill ${c === _newsCat ? 'active' : ''}" data-c="${esc(c)}" onclick="newsSetCat('${esc(c)}')">${esc(d.categories[c].label)}</button>`).join('');
+            `<button class="pill ${c === _newsCat ? 'active' : ''}" data-c="${esc(c)}" onclick="newsSetCat('${jsq(c)}')">${esc(d.categories[c].label)}</button>`).join('');
         renderNewsSources(d.categories);
         loadNews();
     } catch (e) { /* ignore */ }
@@ -2677,7 +2756,7 @@ function renderNewsSources(categories) {
     if (!list.length) return;
     let html = `<button class="pill ${_newsSrc === 'all' ? 'active' : ''}" data-s="all" onclick="newsSetSrc('all')">Semua</button>`;
     html += list.map(s =>
-        `<button class="pill ${s.key === _newsSrc ? 'active' : ''}" data-s="${esc(s.key)}" onclick="newsSetSrc('${esc(s.key)}')">${esc(s.name)}</button>`).join('');
+        `<button class="pill ${s.key === _newsSrc ? 'active' : ''}" data-s="${esc(s.key)}" onclick="newsSetSrc('${jsq(s.key)}')">${esc(s.name)}</button>`).join('');
     srcBox.innerHTML = html;
 }
 
@@ -2777,6 +2856,8 @@ function newsSearchEnter() {
    ============================================================ */
 let _chatSince = 0;
 let _chatTimer = null;
+let _chatMsgs = {};            // id pesan -> data pesan (untuk balas tanpa menyisipkan teks ke HTML)
+let _chatStickBottom = true;   // auto-scroll hanya kalau user memang di bawah
 
 let _chatReplyId = 0;
 let _chatReplyWho = '';
@@ -2789,7 +2870,8 @@ function chatAttachmentHtml(m) {
     const t = m.attach_type || 'file';
     const nm = m.attach_name || 'file';
     if (t === 'image') {
-        return `<div class="cm-attach cm-img"><img src="${esc(m.attach_url)}" loading="lazy" alt="${esc(nm)}" onclick="window.open('${esc(m.attach_url)}','_blank')"></div>`;
+        const u = esc(m.attach_url);
+        return `<div class="cm-attach cm-img"><img src="${u}" loading="lazy" alt="${esc(nm)}" data-full="${u}"></div>`;
     }
     if (t === 'video') {
         return `<div class="cm-attach"><video src="${esc(m.attach_url)}" controls preload="metadata"></video></div>`;
@@ -2798,26 +2880,63 @@ function chatAttachmentHtml(m) {
         return `<div class="cm-attach"><audio src="${esc(m.attach_url)}" controls preload="metadata"></audio></div>`;
     }
     return `<div class="cm-attach cm-file"><a href="${esc(m.attach_url)}" target="_blank" rel="noopener">
-        <span class="cm-file-ic">📄</span><span class="cm-file-name">${esc(nm)}</span></a></div>`;
+        <span class="cm-file-ic">${IC.doc}</span><span class="cm-file-name">${esc(nm)}</span></a></div>`;
 }
 
 function chatReplyHtml(m) {
     if (!m.reply_to) return '';
-    return `<div class="cm-reply" onclick="chatReplyTo(${esc(m.id)}, '${esc((m.reply_to.username || '').replace(/'/g, '\\\''))}', '${esc((m.reply_to.message || '').slice(0, 80).replace(/'/g, '\\\''))}')">
+    // Klik kutipan = lompat ke pesan aslinya (bukan membalas ke pesan yang salah).
+    // parent_id adalah integer dari server — aman ditaruh inline.
+    return `<div class="cm-reply" data-pid="${parseInt(m.parent_id, 10) || 0}" role="button" title="Lihat pesan asli">
         <span class="cm-reply-who">${esc(m.reply_to.username)}</span>
         <span class="cm-reply-text">${esc(m.reply_to.message || '')}</span>
     </div>`;
 }
 
-async function chatLoad() {
+/* Klik tombol balas — pakai data dari map, BUKAN string yang disisipkan ke
+   atribut onclick (dulu bisa rusak/dibobol lewat username/pesan berisi '). */
+function chatReplyClick(id) {
+    const m = _chatMsgs[id];
+    if (!m) return;
+    chatReplyTo(id, m.username || '', (m.message || '').slice(0, 80));
+}
+
+/* Klik kutipan balasan = gulir ke pesan aslinya & sorot sebentar
+   (seperti WhatsApp). Kalau pesan asli tidak termuat, tawarkan balas. */
+function chatQuoteClick(pid) {
+    if (!pid) return;
+    const list = document.getElementById('chat-list');
+    const target = list && list.querySelector('.chat-msg[data-id="' + pid + '"]');
+    if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.classList.remove('flash');
+        void target.offsetWidth;   // restart animasi
+        target.classList.add('flash');
+        setTimeout(() => target.classList.remove('flash'), 1600);
+    } else {
+        const m = _chatMsgs[pid];
+        if (m) chatReplyTo(pid, m.username || '', (m.message || '').slice(0, 80));
+        else toast('Pesan asli sudah lama — tidak termuat.');
+    }
+}
+
+function chatNearBottom() {
+    const list = document.getElementById('chat-list');
+    if (!list) return true;
+    return (list.scrollHeight - list.scrollTop - list.clientHeight) < 90;
+}
+
+async function chatLoad(forceScroll) {
     try {
         const d = await fetchJSON('/api/chat?since=' + _chatSince);
         const list = document.getElementById('chat-list');
         if (!list) return;
         const msgs = d.messages || [];
         if (msgs.length) {
+            const stick = forceScroll || _chatStickBottom || chatNearBottom();
             _chatSince = msgs[msgs.length - 1].id;
             for (const m of msgs) {
+                _chatMsgs[m.id] = m;   // simpan data asli untuk balasan (aman dari injeksi)
                 const own = m.username === _authUser && _authUser;
                 const div = document.createElement('div');
                 div.className = 'chat-msg' + (own ? ' own' : '');
@@ -2825,7 +2944,7 @@ async function chatLoad() {
                 div.innerHTML = `<div class="cm-head">
                         <span class="cm-user">${esc(m.username)}</span>
                         <span class="cm-time">${new Date(m.created * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
-                        <button class="cm-reply-btn" onclick="chatReplyTo(${esc(m.id)}, '${esc(m.username.replace(/'/g, '\\\''))}', '${esc((m.message || '').slice(0, 80).replace(/'/g, '\\\''))}')" title="Balas" aria-label="Balas">
+                        <button class="cm-reply-btn" data-rid="${parseInt(m.id, 10) || 0}" title="Balas" aria-label="Balas">
                             <svg viewBox="0 0 24 24" class="ic"><path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z"/></svg>
                         </button>
                     </div>
@@ -2833,8 +2952,9 @@ async function chatLoad() {
                     ${chatAttachmentHtml(m)}
                     <div class="cm-text">${esc(m.message || '')}</div>`;
                 list.appendChild(div);
+                if (own) _chatStickBottom = true;   // pesan sendiri → selalu ikut ke bawah
             }
-            list.scrollTop = list.scrollHeight;
+            if (stick) list.scrollTop = list.scrollHeight;
         }
     } catch (e) { /* abaikan */ }
 }
@@ -2861,6 +2981,24 @@ function setupChatSwipe() {
     const list = document.getElementById('chat-list');
     if (!list) return;
     let startX = 0, startY = 0, swiping = false, msg = null;
+
+    /* Delegasi klik SEKALI untuk semua gelembung chat (balas / kutipan /
+       gambar) — pengganti atribut onclick inline yang rawan injeksi. */
+    list.addEventListener('click', (e) => {
+        const t = e.target;
+        const img = t && t.closest ? t.closest('.cm-img img') : null;
+        if (img && img.dataset.full) { window.open(img.dataset.full, '_blank'); return; }
+        const rb = t && t.closest ? t.closest('.cm-reply-btn') : null;
+        if (rb) { chatReplyClick(parseInt(rb.dataset.rid, 10) || 0); return; }
+        const q = t && t.closest ? t.closest('.cm-reply') : null;
+        if (q) { chatQuoteClick(parseInt(q.dataset.pid, 10) || 0); return; }
+    });
+
+    // catat posisi scroll — auto-scroll ke bawah hanya kalau user memang
+    // sedang di bawah (supaya membaca pesan lama tidak "ditarik" ke bawah).
+    list.addEventListener('scroll', () => {
+        _chatStickBottom = chatNearBottom();
+    }, { passive: true });
 
     list.addEventListener('touchstart', (e) => {
         const t = e.touches[0];
@@ -2939,7 +3077,7 @@ async function chatSend() {
         input.value = '';
         chatCancelReply();
         chatClearAttach();
-        chatLoad();
+        chatLoad(true);   // paksa scroll — ini pesan kita sendiri
     } catch (e) {
         toast(e.message, true);
     }
@@ -2960,7 +3098,8 @@ async function chatSend() {
             _chatAttach = { url: d.url, type: d.type, name: d.name };
             const bar = document.getElementById('chat-attach');
             bar.classList.remove('hidden');
-            document.getElementById('chat-attach-name').textContent = d.name + (d.type === 'image' ? ' 🖼️' : d.type === 'video' ? ' 🎬' : ' 📎');
+            document.getElementById('chat-attach-name').textContent = d.name +
+                (d.type === 'image' ? ' (gambar)' : d.type === 'video' ? ' (video)' : d.type === 'audio' ? ' (audio)' : ' (file)');
             toast('Lampiran siap dikirim');
         } catch (e) {
             toast(e.message, true);
@@ -2969,9 +3108,359 @@ async function chatSend() {
     });
 })();
 
+/* ============================================================
+   KONVERSI FILE (ala FreeConvert) & HD ENHANCER — logika UI
+   ============================================================ */
+let _convFormats = null;   // matriks format dari server
+let _convFile = null;
+let _convCat = '';
+let _convTarget = '';
+let _convQuality = 'medium';
+
+let _enhFile = null;
+let _enhCat = '';
+let _enhLevel = '';
+let _enhStrength = 'medium';
+
+function toolExt(name) {
+    const m = /\.([^.]+)$/.exec(name || '');
+    return m ? m[1].toLowerCase() : '';
+}
+function toolCatFor(ext) {
+    const v = ['mp4', 'webm', 'mkv', 'mov', 'avi', 'm4v', 'flv', 'ts', 'm2ts', 'mpg', 'mpeg', '3gp', 'wmv', 'vob'];
+    const a = ['mp3', 'm4a', 'aac', 'wav', 'ogg', 'opus', 'flac', 'wma', 'aiff', 'amr', 'mka'];
+    const i = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tif', 'tiff', 'avif', 'heic', 'heif'];
+    if (v.indexOf(ext) >= 0) return 'video';
+    if (a.indexOf(ext) >= 0) return 'audio';
+    if (i.indexOf(ext) >= 0) return 'image';
+    return '';
+}
+function toolFmtSize(n) {
+    if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
+    if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';
+    return n + ' B';
+}
+function toolMaxBytes() {
+    return (((_convFormats || {}).max_mb) || 150) * 1048576;
+}
+
+/* Pasang dropzone (klik + seret-lepas) untuk sebuah alat */
+function toolBindDrop(dropId, inputId, onPick) {
+    const drop = document.getElementById(dropId);
+    const fi = document.getElementById(inputId);
+    if (!drop || !fi) return;
+    drop.addEventListener('click', () => fi.click());
+    drop.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); fi.click(); }
+    });
+    ['dragover', 'dragenter'].forEach(t => drop.addEventListener(t, (e) => {
+        e.preventDefault(); drop.classList.add('dragover');
+    }));
+    ['dragleave', 'drop'].forEach(t => drop.addEventListener(t, (e) => {
+        e.preventDefault(); drop.classList.remove('dragover');
+    }));
+    drop.addEventListener('drop', (e) => {
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) onPick(f);
+    });
+    fi.addEventListener('change', () => {
+        const f = fi.files && fi.files[0];
+        if (f) onPick(f);
+        fi.value = '';
+    });
+}
+
+/* Upload multipart dengan progress NYATA (XHR — fetch tidak punya progress upload) */
+function toolUpload(url, fd, onProgress) {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', url);
+        if (_authToken) xhr.setRequestHeader('X-Auth-Token', _authToken);
+        xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
+        };
+        xhr.onload = () => {
+            let j = {};
+            try { j = JSON.parse(xhr.responseText || '{}'); } catch (e) {}
+            if (xhr.status >= 200 && xhr.status < 300) resolve(j);
+            else reject(new Error(j.error || ('HTTP ' + xhr.status)));
+        };
+        xhr.onerror = () => reject(new Error('Jaringan terputus saat mengunggah. Coba lagi.'));
+        xhr.ontimeout = () => reject(new Error('Unggahan kehabisan waktu.'));
+        xhr.timeout = 10 * 60 * 1000;
+        xhr.send(fd);
+    });
+}
+
+const _TOOL_CARD_INNER = `
+    <div class="progress-head">
+        <span class="progress-title no-translate">__TITLE__</span>
+        <span class="progress-status" id="progress-status">Antre</span>
+        <span class="progress-time" id="progress-time">0:00</span>
+        <button class="done-close card-close" onclick="dismissCard(this)" title="Tutup" aria-label="Tutup">
+            <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"/></svg>
+        </button>
+    </div>
+    <div class="progress-pctwrap">
+        <span class="progress-pct" id="progress-pct">0%</span>
+        <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+    </div>
+    <p class="progress-msg" id="progress-msg">Menyiapkan…</p>
+    <p class="progress-eta" id="progress-eta"></p>`;
+
+/* Alur umum alat file: unggah (progress nyata) → job server (poll standar) */
+async function _toolStartJob(url, fd, resultsId, titleText) {
+    const box = document.getElementById(resultsId);
+    if (!box) return;
+    const mpId = 'tool-job-' + Date.now() + '-' + Math.floor(Math.random() * 1000000);
+    box.insertAdjacentHTML('afterbegin', `<div class="progress-card" id="${mpId}"></div>`);
+    const card = document.getElementById(mpId);
+    card.innerHTML = _TOOL_CARD_INNER.split('__TITLE__').join(esc(titleText));
+    const setP = (pct, msg, status) => {
+        const fill = card.querySelector('#progress-fill'); if (fill) fill.style.width = pct + '%';
+        const pc = card.querySelector('#progress-pct'); if (pc) pc.textContent = Math.round(pct) + '%';
+        const mg = card.querySelector('#progress-msg'); if (mg && msg) mg.textContent = msg;
+        const st = card.querySelector('#progress-status'); if (st && status) st.textContent = status;
+    };
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    try {
+        dlStart = Date.now();
+        const j = await toolUpload(url, fd, (p) =>
+            setP(p * 100, 'Mengunggah file… ' + Math.round(p * 100) + '%', 'Mengunggah…'));
+        // upload selesai → bangun ulang kartu jadi kartu JOB standar & mulai polling
+        card.innerHTML = _TOOL_CARD_INNER.split('__TITLE__').join(esc(titleText));
+        pollJobInto(j.job_id, '#' + mpId);
+    } catch (e) {
+        card.innerHTML = `<div class="state-error"><b>Gagal</b><p>${esc(e.message)}</p>
+            <button class="btn ghost" onclick="this.closest('.progress-card').remove()">Tutup</button></div>`;
+    }
+}
+
+/* ————— KONVERSI ————— */
+function convPick(f) {
+    const ext = toolExt(f.name);
+    const cat = toolCatFor(ext);
+    if (!cat) { toast('Jenis file ini belum didukung untuk konversi.', true); return; }
+    if (f.size > toolMaxBytes()) {
+        toast('File terlalu besar (maks ' + ((_convFormats || {}).max_mb || 150) + ' MB).', true);
+        return;
+    }
+    _convFile = f;
+    _convCat = cat;
+    document.getElementById('conv-file-name').textContent = f.name;
+    document.getElementById('conv-file-sub').textContent =
+        (cat === 'video' ? 'Video' : cat === 'audio' ? 'Audio' : 'Gambar') +
+        ' · ' + toolFmtSize(f.size) + ' · .' + ext;
+    document.getElementById('conv-file-ic').innerHTML =
+        cat === 'video' ? IC.film : cat === 'audio' ? IC.music : IC.image;
+    convRenderTargets();
+    document.getElementById('conv-config').classList.remove('hidden');
+}
+
+function convRenderTargets() {
+    const box = document.getElementById('conv-target-pills');
+    const targets = ((_convFormats || {}).targets || {})[_convCat] || [];
+    const ext = toolExt(_convFile ? _convFile.name : '');
+    const opts = targets.filter(t => t !== ext);
+    if (!opts.length) { box.innerHTML = '<span class="muted">Tidak ada tujuan lain untuk jenis ini.</span>'; return; }
+    if (opts.indexOf(_convTarget) < 0) _convTarget = opts[0];
+    box.innerHTML = opts.map(t =>
+        `<button class="pill${t === _convTarget ? ' active' : ''}" data-t="${t}" onclick="convSetTarget('${t}')">${t.toUpperCase()}</button>`).join('');
+    convSyncOptions();
+}
+
+function convSetTarget(t) {
+    _convTarget = t;
+    document.querySelectorAll('#conv-target-pills .pill').forEach(b =>
+        b.classList.toggle('active', b.dataset.t === t));
+    convSyncOptions();
+}
+
+function convSyncOptions() {
+    const isImgOut = _convCat === 'image';
+    const showPreset = !isImgOut;   // video/audio → preset Tinggi/Seimbang/Kecil
+    const qRow = document.getElementById('conv-quality-row');
+    if (qRow) qRow.classList.toggle('hidden', !showPreset);
+    const showImgQ = isImgOut && ['jpg', 'webp'].indexOf(_convTarget) >= 0;
+    const iRow = document.getElementById('conv-imgq-row');
+    if (iRow) iRow.classList.toggle('hidden', !showImgQ);
+}
+
+function convertStart() {
+    if (!_convFile) { toast('Pilih file dulu.', true); return; }
+    if (!_convTarget) { toast('Pilih format tujuan.', true); return; }
+    const fd = new FormData();
+    fd.append('file', _convFile);
+    fd.append('target', _convTarget);
+    fd.append('quality', _convQuality);
+    fd.append('img_quality', document.getElementById('conv-imgq').value);
+    _toolStartJob('/api/convert', fd, 'conv-results',
+        _convFile.name + ' → ' + _convTarget.toUpperCase());
+}
+
+/* ————— HD ENHANCER ————— */
+function enhPick(f) {
+    const ext = toolExt(f.name);
+    const cat = toolCatFor(ext);
+    if (!cat || cat === 'audio') { toast('Enhancer menerima foto atau video ya.', true); return; }
+    if (f.size > toolMaxBytes()) {
+        toast('File terlalu besar (maks ' + ((_convFormats || {}).max_mb || 150) + ' MB).', true);
+        return;
+    }
+    _enhFile = f;
+    _enhCat = cat;
+    document.getElementById('enh-file-name').textContent = f.name;
+    document.getElementById('enh-file-sub').textContent =
+        (cat === 'video' ? 'Video' : 'Foto') + ' · ' + toolFmtSize(f.size) + ' · .' + ext;
+    document.getElementById('enh-file-ic').innerHTML = cat === 'video' ? IC.film : IC.image;
+    const lbl = document.getElementById('enh-level-lbl');
+    lbl.textContent = cat === 'image' ? 'Perbesar' : 'Naikkan kualitas ke';
+    const levels = cat === 'image'
+        ? [['2x', '2× Lebih Tajam'], ['4x', '4× Maksimal']]
+        : [['720', 'HD 720p'], ['1080', 'Full HD 1080p'], ['1440', '2K 1440p'], ['2160', '4K 2160p']];
+    _enhLevel = cat === 'image' ? '2x' : '1080';
+    document.getElementById('enh-level-pills').innerHTML = levels.map(x =>
+        `<button class="pill${x[0] === _enhLevel ? ' active' : ''}" data-l="${x[0]}" onclick="enhSetLevel('${x[0]}')">${x[1]}</button>`).join('');
+    document.getElementById('enh-config').classList.remove('hidden');
+}
+
+function enhSetLevel(l) {
+    _enhLevel = l;
+    document.querySelectorAll('#enh-level-pills .pill').forEach(b =>
+        b.classList.toggle('active', b.dataset.l === l));
+}
+
+function enhanceStart() {
+    if (!_enhFile) { toast('Pilih foto atau video dulu.', true); return; }
+    const fd = new FormData();
+    fd.append('file', _enhFile);
+    fd.append('level', _enhLevel);
+    fd.append('strength', _enhStrength);
+    _toolStartJob('/api/enhance', fd, 'enh-results',
+        _enhFile.name + ' → HD');
+}
+
+/* ————— init alat (sekali saat boot) ————— */
+async function toolInit() {
+    try {
+        _convFormats = await fetchJSON('/api/convert/formats');
+        const hint = document.getElementById('conv-drop-hint');
+        if (hint) hint.textContent =
+            'Video, audio, atau gambar — maks ' + (_convFormats.max_mb || 150) + ' MB' +
+            (_convFormats.ffmpeg ? '' : ' · (server tanpa ffmpeg: video/audio mati)');
+    } catch (e) {
+        _convFormats = { targets: {}, max_mb: 150 };
+    }
+    toolBindDrop('conv-drop', 'conv-file', convPick);
+    toolBindDrop('enh-drop', 'enh-file', enhPick);
+    document.querySelectorAll('#conv-quality-pills .pill').forEach(b =>
+        b.addEventListener('click', () => {
+            _convQuality = b.dataset.q;
+            document.querySelectorAll('#conv-quality-pills .pill').forEach(x =>
+                x.classList.toggle('active', x === b));
+        }));
+    document.querySelectorAll('#enh-strength-pills .pill').forEach(b =>
+        b.addEventListener('click', () => {
+            _enhStrength = b.dataset.s;
+            document.querySelectorAll('#enh-strength-pills .pill').forEach(x =>
+                x.classList.toggle('active', x === b));
+        }));
+    const iq = document.getElementById('conv-imgq');
+    if (iq) iq.addEventListener('input', (e) => {
+        document.getElementById('conv-imgq-val').textContent = e.target.value + '%';
+    });
+    const chBtn = document.getElementById('conv-change');
+    if (chBtn) chBtn.addEventListener('click', () => document.getElementById('conv-file').click());
+    const ehBtn = document.getElementById('enh-change');
+    if (ehBtn) ehBtn.addEventListener('click', () => document.getElementById('enh-file').click());
+}
+
+/* ============================================================
+   LIVE REAL-TIME — chat, announcement, tiket, feedback, saran
+   platform & statistik diperbarui SEKETIKA tanpa refresh.
+
+   Jalur utama : SSE (EventSource ke /api/live) — event server instan.
+   Jalur cadangan: polling ringan /api/live-check tiap 4 detik (hanya
+   nomor revisi, data di-fetch ulang HANYA kalau ada yang berubah) —
+   dipakai otomatis di hosting tanpa dukungan SSE (mis. serverless).
+   ============================================================ */
+let _liveEs = null;
+let _liveFallbackT = null;
+let _liveRev = {};
+
+function liveDispatch(kind) {
+    try {
+        if (kind === 'chat') chatLoad();
+        else if (kind === 'ann') {
+            loadAnnouncements();
+            if (_authIsAdmin) loadAdminAnnouncements();
+        } else if (kind === 'tkt') {
+            loadMyTickets();
+            if (_authIsAdmin) loadAdminTickets();
+            refreshOpenTicket();
+        } else if (kind === 'fb') loadFeedback();
+        else if (kind === 'pr') loadPlatformRequests();
+        else if (kind === 'stats') loadStats();
+    } catch (e) { /* abaikan */ }
+}
+
+function _liveAdopt(rev, dispatch) {
+    // dispatch=true → panggil updater untuk kanal yang revisinya berubah
+    if (!rev) return;
+    for (const k of Object.keys(rev)) {
+        if (dispatch && _liveRev[k] !== undefined && rev[k] !== _liveRev[k]) liveDispatch(k);
+    }
+    _liveRev = Object.assign({}, _liveRev, rev);
+}
+
+function startLive() {
+    if (typeof EventSource !== 'undefined') {
+        let errs = 0;
+        try {
+            _liveEs = new EventSource('/api/live');
+            _liveEs.onopen = () => { errs = 0; stopLiveFallback(); };
+            _liveEs.onmessage = (ev) => {
+                errs = 0;
+                let d = null;
+                try { d = JSON.parse(ev.data); } catch (e) { return; }
+                if (!d) return;
+                if (d.k === 'snap') _liveAdopt(d.rev, false);        // baseline saat tersambung
+                else if (d.k === 'change') _liveAdopt(d.rev, true);  // perubahan → update instan
+            };
+            _liveEs.onerror = () => {
+                errs++;
+                if (errs >= 2) startLiveFallback();   // SSE mentok → polling pintar
+            };
+        } catch (e) {
+            startLiveFallback();
+        }
+    } else {
+        startLiveFallback();
+    }
+}
+
+function startLiveFallback() {
+    if (_liveFallbackT) return;
+    _liveFallbackT = setInterval(async () => {
+        try {
+            const d = await fetchJSON('/api/live-check');
+            // baseline pertama jangan dianggap "perubahan" — halaman baru
+            // dimuat sudah mengambil semua data segar di boot.
+            _liveAdopt(d.rev, !!_liveRev.__pollBase);
+            _liveRev.__pollBase = true;
+        } catch (e) { /* transien — coba lagi siklus berikutnya */ }
+    }, 4000);
+}
+
+function stopLiveFallback() {
+    if (_liveFallbackT) { clearInterval(_liveFallbackT); _liveFallbackT = null; }
+}
+
 /* ---------- Boot ---------- */
 init();
+toolInit();
 startClock();
+startLive();
 checkAuth().then(() => {
     // Login overlay: tampil otomatis kalau belum ada akun/tamu tersimpan
     if (!_authToken) showLogin();
@@ -2980,7 +3469,9 @@ loadNewsSetup();
 loadPlatformRequests();
 loadFeedback();
 loadAnnouncements();
-setInterval(loadAnnouncements, 60000);
+// Jaring pengaman saja — pembaruan utama kini datang SEKETIKA lewat kanal
+// live (SSE /api/live; atau fallback /api/live-check tiap 4 detik).
+setInterval(loadAnnouncements, 120000);
 loadStats();
 setInterval(loadStats, 30000);
 
@@ -3004,7 +3495,9 @@ setInterval(() => updateNewsLive(), 30000);
 (function chatInit() {
     chatLoad();
     setupChatSwipe();
-    _chatTimer = setInterval(chatLoad, 4000);
+    // Pesan baru masuk SEKETIKA lewat kanal live; timer ini hanya cadangan
+    // kalau koneksi live sedang jatuh (mis. sinyal HP putus-putus).
+    _chatTimer = setInterval(chatLoad, 10000);
     const ci = document.getElementById('chat-input');
     if (ci) ci.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') chatSend(); });
     const au = document.getElementById('auth-user');

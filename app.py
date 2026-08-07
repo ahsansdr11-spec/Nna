@@ -317,6 +317,89 @@ def verify_password(password, salt, expected):
 _ensure_admin_account()
 
 
+# ============================================================================
+# LIVE EVENTS — Server-Sent Events (SSE) supaya SEMUA fitur komunikasi
+# (chat, announcement, tiket, feedback, saran platform, statistik) ter-update
+# di layar pengguna TANPA perlu refresh halaman.
+#
+# Cara kerja: setiap aksi yang mengubah data panggil bump_live('<jenis>').
+# Endpoint /api/live menyiarkan jenis perubahan itu ke semua browser yang
+# tersambung; browser lalu mem-fetch ulang hanya data yang berubah.
+# Deploy Docker/Railway/Render memakai 1 worker gunicorn (lihat Dockerfile),
+# jadi broadcaster in-memory ini konsisten. Di hosting serverless (Vercel)
+# koneksi SSE tidak bertahan — frontend otomatis jatuh ke polling pintar
+# lewat /api/live-check, jadi tetap live di mana pun.
+# ============================================================================
+LIVE_COND = threading.Condition()
+# Nomor revisi per kanal — naik setiap ada perubahan. Juga dipakai
+# /api/live-check agar browser tahu data mana yang berubah (polling ringan).
+LIVE_REV = {'chat': 0, 'ann': 0, 'tkt': 0, 'fb': 0, 'pr': 0, 'stats': 0}
+
+
+def bump_live(kind):
+    """Tandai ada perubahan data & bangunkan semua koneksi SSE."""
+    try:
+        with LIVE_COND:
+            LIVE_REV[kind] = LIVE_REV.get(kind, 0) + 1
+            LIVE_COND.notify_all()
+    except Exception:
+        pass
+
+
+@app.route('/api/live')
+def api_live_sse():
+    """Saluran SSE: kirim {'k': <kanal>, 'v': <revisi>} tiap ada perubahan.
+
+    Klien mendapat snapshot revisi saat tersambung (supaya yang baru join
+    langsung sinkron), lalu event perubahan berikutnya secara instan.
+    Heartbeat komentar tiap 20 detik menjaga koneksi tetap hidup melewati
+    proxy (Railway/Render/Nginx)."""
+    @stream_with_context
+    def gen():
+        # Snapshot awal: klien membandingkan revisinya & fetch bila tertinggal
+        with LIVE_COND:
+            snap = dict(LIVE_REV)
+        yield 'retry: 2500\n'
+        yield 'data: %s\n\n' % json.dumps({'k': 'snap', 'rev': snap})
+        sent = snap
+        start = time.time()
+        while True:
+            with LIVE_COND:
+                # tunggu sampai ada revisi baru (maks 20 dtk → heartbeat)
+                LIVE_COND.wait(timeout=20)
+                cur = dict(LIVE_REV)
+            changed = {k: v for k, v in cur.items() if sent.get(k) != v}
+            if changed:
+                sent = cur
+                yield 'data: %s\n\n' % json.dumps({'k': 'change', 'rev': changed})
+            else:
+                yield ': hb\n\n'   # heartbeat — jangan biarkan koneksi mati
+            # Putus sesi setelah ±100 detik. Browser (EventSource) otomatis
+            # menyambung ulang dalam 2,5 dtk & langsung dapat snapshot baru —
+            # jadi tidak ada event yang hilang, dan thread server tidak
+            # dipegang SATU koneksi selamanya (penting untuk gunicorn yang
+            # jumlah thread-nya terbatas).
+            if time.time() - start > 100:
+                yield ': reconnect\n\n'
+                return
+
+    resp = Response(gen(), mimetype='text/event-stream')
+    resp.headers['Cache-Control'] = 'no-cache'
+    resp.headers['X-Accel-Buffering'] = 'no'   # matikan buffer proxy Nginx
+    resp.headers['Connection'] = 'keep-alive'
+    return resp
+
+
+@app.route('/api/live-check')
+def api_live_check():
+    """Fallback super-ringan untuk lingkungan tanpa SSE (Vercel/proxy ketat):
+    kembalikan nomor revisi tiap kanal — browser membandingkan & hanya
+    mem-fetch ulang kanal yang benar-benar berubah."""
+    with LIVE_COND:
+        rev = dict(LIVE_REV)
+    return jsonify({'ok': True, 'rev': rev})
+
+
 def create_session(user_id):
     token = secrets.token_hex(24)
     db_exec("INSERT INTO sessions (token, user_id, created) VALUES (?,?,?)",
@@ -383,14 +466,18 @@ JOB_TTL = 30 * 60          # job + file dibersihkan setelah 30 menit
 # ---------------------------------------------------------------------------
 # Pemilihan resolusi (default 1080p untuk semua platform)
 # ---------------------------------------------------------------------------
+# Varian pertama SELALU mengutamakan codec H.264 (avc1) + audio AAC (mp4a)
+# supaya hasil MP4 benar-benar bisa diputar di SEMUA perangkat (HP lama,
+# Windows, TV). Kalau tidak ada (mis. 2K/4K YouTube yang kadang VP9 saja),
+# jatuh ke pemilihan umum — dan strategi run_download punya cadangan MKV.
 RESOLUTIONS = {
-    '2160':    'bv*[height<=2160]+ba/b[height<=2160]',
-    '1440':    'bv*[height<=1440]+ba/b[height<=1440]',
-    '1080':    'bv*[height<=1080]+ba/b[height<=1080]',   # default
-    '720':     'bv*[height<=720]+ba/b[height<=720]',
-    '480':     'bv*[height<=480]+ba/b[height<=480]',
-    '360':     'bv*[height<=360]+ba/b[height<=360]',
-    'original': 'bv*+ba/b',
+    '2160':    'bv*[height<=2160][vcodec^=avc1]+ba[acodec^=mp4a]/bv*[height<=2160]+ba/b[height<=2160]',
+    '1440':    'bv*[height<=1440][vcodec^=avc1]+ba[acodec^=mp4a]/bv*[height<=1440]+ba/b[height<=1440]',
+    '1080':    'bv*[height<=1080][vcodec^=avc1]+ba[acodec^=mp4a]/bv*[height<=1080]+ba/b[height<=1080]',
+    '720':     'bv*[height<=720][vcodec^=avc1]+ba[acodec^=mp4a]/bv*[height<=720]+ba/b[height<=720]',
+    '480':     'bv*[height<=480][vcodec^=avc1]+ba[acodec^=mp4a]/bv*[height<=480]+ba/b[height<=480]',
+    '360':     'bv*[height<=360][vcodec^=avc1]+ba[acodec^=mp4a]/bv*[height<=360]+ba/b[height<=360]',
+    'original': 'bv*[vcodec^=avc1]+ba[acodec^=mp4a]/bv*+ba/b',
 }
 DEFAULT_RESOLUTION = '1080'
 JOBS = {}
@@ -724,9 +811,10 @@ def friendly_error(msg):
         return ('TikTok sedang sibuk melindungi kontennya dan menolak permintaan ini. '
                 'Tenang, ini bukan salahmu! Coba: ganti jaringan (Wi-Fi ke data seluler, '
                 'atau sebaliknya), tunggu beberapa menit, lalu coba lagi.')
-    if ('ffmpeg' in low and ('not found' in low or 'ffprobe' in low
-                             or 'is not installed' in low or 'merge' in low)):
-        return ('Fitur MP3 butuh ffmpeg yang belum terpasang di server ini. '
+    if ('ffmpeg' in low or 'ffprobe' in low) and ('not found' in low or 'ffprobe' in low
+                             or 'is not installed' in low or 'merge' in low
+                             or 'unable to obtain' in low or 'no such file' in low):
+        return ('Fitur MP3/konversi butuh ffmpeg (+ ffprobe) yang belum terpasang di server ini. '
                 'Hubungi pengelola website untuk memasangnya (atau gunakan mode video).')
     if 'drm' in low or ('protected' in low and 'youtube' in low):
         return ('Video ini dilindungi DRM oleh YouTube — artinya hanya bisa diputar di '
@@ -1582,8 +1670,13 @@ def extract_direct_media(url):
     if ext not in DIRECT_MEDIA_EXT:
         ext = 'jpg'
     is_video = ext in ('mp4', 'webm', 'mov', 'm4v')
+    # judul dari nama file di URL (lebih informatif daripada "Konten Media")
+    try:
+        fname = urllib.parse.unquote(last).strip() or None
+    except Exception:
+        fname = last or None
     return {
-        'meta': {},
+        'meta': {'title': fname} if fname else {},
         'items': [{'url': url, 'ext': ext, 'type': 'video' if is_video else 'image'}],
     }
 
@@ -3109,7 +3202,7 @@ def api_music_prepare():
 
 
 def run_download(job, url, mode, format_id, resolution=DEFAULT_RESOLUTION,
-                 force_ie=None):
+                 force_ie=None, merge_audio=False):
     """Jalankan download yt-dlp di background thread — dengan strategi
     berlapis agar hasilnya andal (terutama MP3): coba beberapa format
     berurutan + retry + validasi file benar-benar media (bukan error).
@@ -3171,7 +3264,17 @@ def run_download(job, url, mode, format_id, resolution=DEFAULT_RESOLUTION,
     elif mode == 'vonly':
         strategies = [mk(res_sel.split('+ba')[0] + '/b' if '+ba' in res_sel else 'bv/b')]
     elif mode == 'custom' and format_id:
-        strategies = [mk(format_id)]
+        if merge_audio:
+            # Format mentah VIDEO-ONLY (mis. 137/248 di YouTube) — gabungkan
+            # dengan audio terbaik supaya hasilnya bersuara (bukan film bisu),
+            # persis perilaku yang diharapkan pengguna.
+            strategies = [
+                mk('%s+bestaudio/%s' % (format_id, format_id), merge='mp4'),
+                mk('%s+bestaudio/%s' % (format_id, format_id)),
+                mk(format_id),
+            ]
+        else:
+            strategies = [mk(format_id)]
     else:  # 'best'
         strategies = [mk(res_sel, merge='mp4'), mk(res_sel, merge='mkv'),
                       mk('best/bv*+ba', merge='mp4')]   # fallback format tanpa height
@@ -3506,7 +3609,9 @@ def api_info():
     if platform is None:
         try:
             item = probe_direct_media(url)
-            g = {'meta': {}, 'items': [item]}
+            # judul dari nama file di URL (lebih informatif dari "Konten Media")
+            fname = os.path.basename(urllib.parse.urlparse(url).path or '') or ''
+            g = {'meta': ({'title': fname} if fname else {}), 'items': [item]}
             return jsonify(build_gallery_response(g, url, None))
         except Exception:
             pass
@@ -4133,7 +4238,8 @@ def api_download():
                              args=(job, url, detected['key'], mode), daemon=True)
     else:
         t = threading.Thread(target=run_download,
-                             args=(job, url, mode, format_id, resolution, force_ie),
+                             args=(job, url, mode, format_id, resolution, force_ie,
+                                   bool(data.get('merge_audio'))),
                              daemon=True)
     t.start()
     return jsonify({'ok': True, 'job_id': job['id']})
@@ -4557,6 +4663,7 @@ def api_chat_post():
             "VALUES (?,?,?,?,?,?,?,?)",
             (user['id'] if user else None, username, msg, parent_id,
              attach_type, attach_name, attach_url, time.time()))
+    bump_live('chat')
     return jsonify({'ok': True, 'username': username})
 
 
@@ -4648,6 +4755,7 @@ def api_platform_request():
     user = _auth_from_request()
     db_exec("INSERT INTO platform_requests (username, platform, created) VALUES (?,?,?)",
             (get_username(user), plat, time.time()))
+    bump_live('pr')
     # Usulan juga jadi tiket (type=platform) supaya admin bisa balas
     # langsung ke pengusul ("kapan platform X ditambahkan", dsb).
     try:
@@ -5387,6 +5495,7 @@ def api_feedback():
     page = (data.get('page') or '')[:40]
     db_exec("INSERT INTO feedback (user_id, username, message, page, created) VALUES (?,?,?,?,?)",
             (user_id, username, message, page, time.time()))
+    bump_live('fb')
     # Setiap laporan lewat kotak "Laporan Bug/Saran" JUGA otomatis jadi tiket
     # (percakapan dua arah dengan admin) — supaya user bisa dibalas.
     tkt_type = (data.get('type') or 'feedback')
@@ -5396,7 +5505,7 @@ def api_feedback():
         _create_ticket(user, tkt_type, message[:80], message)
     except Exception:
         pass
-    return jsonify({'ok': True, 'message': 'Terima kasih! Laporanmu sudah masuk, dan bisa dibalas admin di tab Tiket. 🙏'})
+    return jsonify({'ok': True, 'message': 'Terima kasih! Laporanmu sudah masuk, dan bisa dibalas admin di tab Tiket.'})
 
 
 # ============================================================================
@@ -5415,6 +5524,7 @@ def _create_ticket(user, ttype, subject, first_message):
         "INSERT INTO ticket_messages (ticket_id, sender, username, message, created) "
         "VALUES (?,?,?,?,?)",
         (tid, 'user', uname, first_message, now))
+    bump_live('tkt')
     return tid
 
 
@@ -5503,6 +5613,7 @@ def api_ticket_reply(tid):
         "VALUES (?,?,?,?,?)", (tid, sender, uname, message, now))
     new_status = 'answered' if admin else 'open'
     db_exec("UPDATE tickets SET status=?, updated=? WHERE id=?", (new_status, now, tid))
+    bump_live('tkt')
     return jsonify({'ok': True})
 
 
@@ -5519,6 +5630,7 @@ def api_ticket_status(tid):
     if not rows:
         return jsonify({'error': 'Tiket tidak ditemukan.'}), 404
     db_exec("UPDATE tickets SET status=?, updated=? WHERE id=?", (status, time.time(), tid))
+    bump_live('tkt')
     return jsonify({'ok': True})
 
 
@@ -5547,6 +5659,7 @@ def api_announcements():
     aid = db_exec(
         "INSERT INTO announcements (type, title, message, created_by, created) VALUES (?,?,?,?,?)",
         (atype, title, message, user['username'], time.time()))
+    bump_live('ann')
     return jsonify({'ok': True, 'id': aid})
 
 
@@ -5556,7 +5669,482 @@ def api_announcement_delete(aid):
     if not is_admin_user(user):
         return jsonify({'error': 'Hanya admin yang bisa menghapus announcement.'}), 403
     db_exec("DELETE FROM announcements WHERE id=?", (aid,))
+    bump_live('ann')
     return jsonify({'ok': True})
+
+
+# ============================================================================
+# KONVERSI FILE (ala FreeConvert) — upload file → ubah format → unduh hasil.
+# Video/audio via ffmpeg, gambar via Pillow. Semua di background thread
+# dengan progress NYATA yang di-parse dari output ffmpeg.
+# ============================================================================
+try:
+    from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+    PIL_AVAILABLE = True
+except Exception:
+    PIL_AVAILABLE = False
+
+CONVERT_MAX_BYTES = 150 * 1024 * 1024   # maks 150 MB per file
+
+VIDEO_EXTS = {'mp4', 'webm', 'mkv', 'mov', 'avi', 'm4v', 'flv', 'ts', 'm2ts',
+              'mpg', 'mpeg', '3gp', 'wmv', 'vob'}
+AUDIO_EXTS = {'mp3', 'm4a', 'aac', 'wav', 'ogg', 'opus', 'flac', 'wma', 'aiff',
+              'amr', 'mka'}
+IMAGE_EXTS = {'jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tif', 'tiff', 'avif',
+              'heic', 'heif'}
+
+# Matriks format tujuan per kategori — pola FreeConvert:
+# video → video lain / GIF / ekstrak audio · audio → audio · gambar → gambar.
+CONVERT_TARGETS = {
+    'video': ['mp4', 'webm', 'mkv', 'mov', 'avi', 'gif',
+              'mp3', 'm4a', 'wav', 'ogg', 'flac'],
+    'audio': ['mp3', 'm4a', 'wav', 'ogg', 'flac', 'aac'],
+    'image': ['jpg', 'png', 'webp', 'gif', 'bmp'],
+}
+
+# Preset kualitas (label UI → parameter encoder nyata).
+# SEMUA nilai STRING — argumen subprocess tidak menerima int.
+CONVERT_QUALITY = {
+    'high':   {'crf': '18', 'avi_q': '3', 'mp3': '320k', 'aac': '256k',
+               'vorbis': '7', 'vp9': '30'},
+    'medium': {'crf': '23', 'avi_q': '5', 'mp3': '192k', 'aac': '192k',
+               'vorbis': '5', 'vp9': '34'},
+    'small':  {'crf': '28', 'avi_q': '8', 'mp3': '128k', 'aac': '128k',
+               'vorbis': '3', 'vp9': '40'},
+}
+
+
+def conv_category(ext):
+    if ext in VIDEO_EXTS:
+        return 'video'
+    if ext in AUDIO_EXTS:
+        return 'audio'
+    if ext in IMAGE_EXTS:
+        return 'image'
+    return None
+
+
+def ffprobe_info(path):
+    """Durasi & metadata stream via ffprobe (untuk progress konversi)."""
+    ff = shutil.which('ffprobe')
+    if not ff:
+        return {}
+    try:
+        out = subprocess.run(
+            [ff, '-v', 'error', '-print_format', 'json',
+             '-show_format', '-show_streams', path],
+            capture_output=True, timeout=60)
+        data = json.loads(out.stdout.decode('utf-8', 'ignore') or '{}')
+        info = {'duration': float((data.get('format') or {}).get('duration') or 0)}
+        for s in data.get('streams') or []:
+            if s.get('codec_type') == 'video':
+                info.setdefault('width', s.get('width'))
+                info.setdefault('height', s.get('height'))
+                info['has_video'] = True
+            elif s.get('codec_type') == 'audio':
+                info['has_audio'] = True
+        return info
+    except Exception:
+        return {}
+
+
+def run_ffmpeg_logged(job, args, duration):
+    """Jalankan ffmpeg dengan -progress (progress bar NYATA, bukan animasi).
+    out_time_ms dari ffmpeg (namanya melegakan tapi isinya mikrodetik)
+    dibandingkan dengan durasi total → persentase akurat."""
+    ff = shutil.which('ffmpeg')
+    if not ff:
+        raise RuntimeError('ffmpeg belum terpasang di server.')
+    cmd = [ff, '-y', '-nostdin', '-hide_banner', '-loglevel', 'error',
+           '-progress', 'pipe:1'] + args
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, errors='ignore')
+    while True:
+        line = proc.stdout.readline()
+        if not line:
+            if proc.poll() is not None:
+                break
+            time.sleep(0.2)
+            continue
+        line = line.strip()
+        if line.startswith('out_time_ms=') and duration:
+            try:
+                us = int(line.split('=', 1)[1])
+                job['progress'] = min(99, round(us / 1e6 / duration * 100, 1))
+            except (ValueError, ZeroDivisionError):
+                pass
+        elif line == 'progress=end':
+            job['progress'] = 99
+    err = proc.stderr.read() if proc.stderr else ''
+    proc.wait()
+    if proc.returncode != 0:
+        raise RuntimeError('Konversi gagal: ' + (err or '').strip()[-300:])
+
+
+def _crf_q(quality):
+    return CONVERT_QUALITY.get(quality, CONVERT_QUALITY['medium'])
+
+
+def ffmpeg_convert_args(target, quality, dst):
+    """Argumen ffmpeg (setelah -i) untuk tiap format tujuan."""
+    q = _crf_q(quality)
+    if target == 'mp4':
+        return ['-c:v', 'libx264', '-crf', q['crf'], '-preset', 'veryfast',
+                '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', q['aac'],
+                '-movflags', '+faststart', dst]
+    if target == 'mkv':
+        return ['-c:v', 'libx264', '-crf', q['crf'], '-preset', 'veryfast',
+                '-c:a', 'aac', '-b:a', q['aac'], dst]
+    if target == 'mov':
+        return ['-c:v', 'libx264', '-crf', q['crf'], '-preset', 'veryfast',
+                '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', q['aac'],
+                '-movflags', '+faststart', dst]
+    if target == 'webm':
+        return ['-c:v', 'libvpx-vp9', '-crf', q['vp9'], '-b:v', '0',
+                '-row-mt', '1', '-c:a', 'libopus', '-b:a', '128k', dst]
+    if target == 'avi':
+        return ['-c:v', 'mpeg4', '-q:v', q['avi_q'],
+                '-c:a', 'libmp3lame', '-q:a', '4', dst]
+    if target == 'mp3':
+        return ['-vn', '-c:a', 'libmp3lame', '-b:a', q['mp3'], dst]
+    if target == 'm4a':
+        return ['-vn', '-c:a', 'aac', '-b:a', q['aac'],
+                '-movflags', '+faststart', dst]
+    if target == 'aac':
+        return ['-vn', '-c:a', 'aac', '-b:a', q['aac'], '-f', 'adts', dst]
+    if target == 'wav':
+        return ['-vn', '-c:a', 'pcm_s16le', dst]
+    if target == 'ogg':
+        return ['-vn', '-c:a', 'libvorbis', '-q:a', q['vorbis'], dst]
+    if target == 'flac':
+        return ['-vn', '-c:a', 'flac', dst]
+    raise RuntimeError('Format tujuan tidak dikenal.')
+
+
+def ffmpeg_gif(job, src, dst, duration):
+    """GIF kualitas baik — palet dua lintasan (bukan palet default yang belang)."""
+    job['message'] = 'Membuat palet warna…'
+    palette = src + '.palette.png'
+    run_ffmpeg_logged(job, [
+        '-i', src, '-vf', 'fps=12,scale=480:-2:flags=lanczos,palettegen',
+        '-frames:v', '1', palette], duration)
+    job['message'] = 'Mengonversi ke GIF…'
+    run_ffmpeg_logged(job, [
+        '-i', src, '-i', palette,
+        '-lavfi', 'fps=12,scale=480:-2:flags=lanczos [x]; [x][1:v] '
+                  'paletteuse=dither=bayer:bayer_scale=5', dst], duration)
+    try:
+        os.remove(palette)
+    except OSError:
+        pass
+
+
+def convert_image_file(src, dst, target, quality):
+    """Konversi gambar via Pillow (jpg/png/webp/gif/bmp, animasi GIF awet)."""
+    img = Image.open(src)
+    img = ImageOps.exif_transpose(img)
+    frames = int(getattr(img, 'n_frames', 1) or 1)
+    if target == 'gif':
+        if frames > 1:   # pertahankan animasi
+            seq = []
+            durations = []
+            for i in range(frames):
+                img.seek(i)
+                seq.append(img.convert('P', palette=Image.ADAPTIVE))
+                durations.append(img.info.get('duration', 100))
+            seq[0].save(dst, save_all=True, append_images=seq[1:], loop=0,
+                        duration=durations)
+        else:
+            img.convert('P', palette=Image.ADAPTIVE).save(dst)
+        return
+    if frames > 1:
+        img.seek(0)
+    if target == 'png':
+        img.save(dst, optimize=True)   # alpha (RGBA) dipertahankan
+        return
+    if img.mode != 'RGB':
+        img = img.convert('RGB')
+    if target == 'webp':
+        img.save(dst, 'WEBP', quality=quality, method=6)
+    elif target in ('jpg', 'jpeg'):
+        img.save(dst, 'JPEG', quality=quality, optimize=True, progressive=True)
+    elif target == 'bmp':
+        img.save(dst, 'BMP')
+    else:
+        raise RuntimeError('Format gambar tujuan tidak didukung.')
+
+
+def _finish_tool_job(job, out_path, title_base, target):
+    if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+        raise RuntimeError('Hasil kosong/gagal dibuat — file sumber mungkin rusak.')
+    job['status'] = 'done'
+    job['progress'] = 100
+    job['filepath'] = out_path
+    job['filename'] = safe_filename(title_base) + '.' + target
+    job['filesize_mb'] = mb(os.path.getsize(out_path))
+    job['message'] = 'Selesai dalam ' + elapsed_of(job)
+    _record_done_history(job)
+
+
+def run_convert(job, in_path, orig_name, category, target, quality, img_quality):
+    job['_start'] = time.time()
+    job['status'] = 'processing'
+    job['message'] = 'Menyiapkan konversi…'
+    job['progress'] = 1
+    base = os.path.splitext(os.path.basename(orig_name or 'file'))[0][:90] or 'file'
+    out_path = os.path.join(DOWNLOADS_DIR, job['id'] + '.' + target)
+    try:
+        if category == 'image':
+            if not PIL_AVAILABLE:
+                raise RuntimeError('Konversi gambar butuh Pillow — install: pip install pillow')
+            job['message'] = 'Mengonversi gambar…'
+            job['progress'] = 20
+            convert_image_file(in_path, out_path, target, img_quality)
+            job['progress'] = 95
+        else:
+            meta = ffprobe_info(in_path)
+            dur = meta.get('duration') or 0
+            if target in ('mp3', 'm4a', 'wav', 'ogg', 'flac', 'aac') and meta and not meta.get('has_audio'):
+                raise RuntimeError('File ini tidak punya trek audio — tidak bisa dikonversi ke format audio.')
+            if target == 'gif':
+                ffmpeg_gif(job, in_path, out_path, dur)
+            else:
+                job['message'] = 'Mengonversi…'
+                args = ffmpeg_convert_args(target, quality, out_path)
+                run_ffmpeg_logged(job, ['-i', in_path] + args, dur)
+        _finish_tool_job(job, out_path, base + ' (konversi)', target)
+    except Exception as e:
+        job['status'] = 'error'
+        job['error'] = str(e)[:400]
+        job['message'] = 'Gagal'
+        cleanup_job_files(job['id'])
+        try:
+            os.remove(out_path)
+        except OSError:
+            pass
+    finally:
+        try:
+            os.remove(in_path)
+        except OSError:
+            pass
+
+
+@app.route('/api/convert/formats')
+def api_convert_formats():
+    """Matriks format + kesiapan server (dipakai UI untuk membangun pilihan)."""
+    return jsonify({'ok': True,
+                    'ffmpeg': bool(shutil.which('ffmpeg')),
+                    'pillow': PIL_AVAILABLE,
+                    'targets': CONVERT_TARGETS,
+                    'max_mb': CONVERT_MAX_BYTES // (1024 * 1024)})
+
+
+@app.route('/api/convert', methods=['POST'])
+def api_convert():
+    """Upload file + pilih format tujuan → job konversi di background."""
+    if 'file' not in request.files:
+        return jsonify({'error': 'Pilih file dulu.'}), 400
+    f = request.files['file']
+    orig = f.filename or 'file'
+    ext = orig.rsplit('.', 1)[-1].lower() if '.' in orig else ''
+    category = conv_category(ext)
+    if not category:
+        return jsonify({'error': 'Jenis file ini belum didukung untuk konversi.'}), 400
+    target = (request.form.get('target') or '').strip().lower()
+    if target not in CONVERT_TARGETS[category]:
+        return jsonify({'error': 'Format tujuan tidak cocok dengan jenis file.'}), 400
+    if target == ext:
+        return jsonify({'error': 'Format tujuan sama dengan file aslinya.'}), 400
+    if category != 'image' and not shutil.which('ffmpeg'):
+        return jsonify({'error': 'Konversi video/audio butuh ffmpeg di server '
+                                 '(otomatis terpasang saat deploy via Docker).'}), 500
+    if category == 'image' and not PIL_AVAILABLE:
+        return jsonify({'error': 'Konversi gambar butuh Pillow — install: pip install pillow'}), 500
+    data = f.read(CONVERT_MAX_BYTES + 1)
+    if len(data) > CONVERT_MAX_BYTES:
+        return jsonify({'error': 'File terlalu besar (maks %d MB).'
+                                 % (CONVERT_MAX_BYTES // (1024 * 1024))}), 400
+    if not data:
+        return jsonify({'error': 'File kosong.'}), 400
+    quality = (request.form.get('quality') or 'medium').strip()
+    if quality not in CONVERT_QUALITY:
+        quality = 'medium'
+    try:
+        img_quality = int(request.form.get('img_quality') or 90)
+        img_quality = max(40, min(100, img_quality))
+    except (TypeError, ValueError):
+        img_quality = 90
+    job = new_job()
+    job['_title'] = os.path.splitext(os.path.basename(orig))[0][:90] or 'konversi'
+    job['_platform'] = 'konversi'
+    job['_mode'] = category + ' -> ' + target
+    try:
+        _u = _auth_from_request()
+        if _u:
+            job['_user_id'] = _u['id']
+    except Exception:
+        pass
+    in_path = os.path.join(DOWNLOADS_DIR, job['id'] + '.in.' + ext)
+    with open(in_path, 'wb') as fh:
+        fh.write(data)
+    t = threading.Thread(target=run_convert,
+                         args=(job, in_path, orig, category, target, quality, img_quality),
+                         daemon=True)
+    t.start()
+    return jsonify({'ok': True, 'job_id': job['id']})
+
+
+# ============================================================================
+# PENINGKAT KUALITAS (HD enhancer) — foto & video jadi tajam & HD.
+# Foto: upscale Lanczos + denoise + unsharp + poles kontras/warna (Pillow).
+# Video: upscale Lanczos + hqdn3d (denoise) + unsharp + re-encode H.264
+# kualitas tinggi (CRF 18) dengan audio AAC (ffmpeg). Proses nyata di server.
+# ============================================================================
+ENH_IMAGE_LEVELS = {'2x': 2, '4x': 4}
+ENH_VIDEO_LEVELS = {'720': 720, '1080': 1080, '1440': 1440, '2160': 2160}
+ENH_STRENGTHS = ('soft', 'medium', 'strong')
+ENH_MAX_DIM = 8000   # batas sisi output gambar (anti memory-bomb)
+
+
+def _polish_rgb(img, strength):
+    """Poles kontras/warna/kecerahan (hanya RGB — alpha diproses terpisah)."""
+    if strength != 'soft':
+        img = ImageEnhance.Contrast(img).enhance(1.05 if strength == 'medium' else 1.09)
+        img = ImageEnhance.Color(img).enhance(1.04 if strength == 'medium' else 1.07)
+    img = ImageEnhance.Brightness(img).enhance(1.01)
+    return img
+
+
+def enhance_image_file(src, dst, factor, strength):
+    """Tingkatkan kualitas foto: upscale + denoise + sharpen + poles warna."""
+    img = Image.open(src)
+    img = ImageOps.exif_transpose(img)
+    has_alpha = img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info)
+    work = img.convert('RGBA' if has_alpha else 'RGB')
+    w, h = work.size
+    nw, nh = w * factor, h * factor
+    cap = min(1.0, ENH_MAX_DIM / max(nw, nh))
+    if cap < 1.0:
+        nw, nh = max(1, int(nw * cap)), max(1, int(nh * cap))
+    up = work.resize((nw, nh), Image.LANCZOS)
+    # 1) redam noise lembut (tidak merusak detail)
+    if strength == 'strong':
+        up = up.filter(ImageFilter.GaussianBlur(0.6))
+    elif strength == 'medium':
+        up = up.filter(ImageFilter.GaussianBlur(0.3))
+    # 2) pertajam (unsharp mask)
+    amt = {'soft': 60, 'medium': 85, 'strong': 115}[strength]
+    up = up.filter(ImageFilter.UnsharpMask(radius=2, percent=amt, threshold=2))
+    # 3) poles warna/kontras — pisahkan alpha supaya transparansi utuh
+    if has_alpha:
+        alpha = up.getchannel('A')
+        rgb = _polish_rgb(up.convert('RGB'), strength)
+        up = Image.merge('RGBA', tuple(list(rgb.split()) + [alpha]))
+    else:
+        up = _polish_rgb(up, strength)
+    up.save(dst, 'PNG', optimize=True)
+
+
+def run_enhance(job, in_path, orig_name, category, level, strength):
+    job['_start'] = time.time()
+    job['status'] = 'processing'
+    job['message'] = 'Menganalisis…'
+    job['progress'] = 1
+    base = os.path.splitext(os.path.basename(orig_name or 'file'))[0][:90] or 'file'
+    try:
+        if category == 'image':
+            if not PIL_AVAILABLE:
+                raise RuntimeError('Enhancer foto butuh Pillow — install: pip install pillow')
+            out_path = os.path.join(DOWNLOADS_DIR, job['id'] + '.png')
+            job['message'] = 'Meningkatkan kualitas foto…'
+            job['progress'] = 15
+            enhance_image_file(in_path, out_path, ENH_IMAGE_LEVELS[level], strength)
+            job['progress'] = 95
+            _finish_tool_job(job, out_path, base + ' HD', 'png')
+        else:
+            if not shutil.which('ffmpeg'):
+                raise RuntimeError('Enhancer video butuh ffmpeg di server.')
+            h = ENH_VIDEO_LEVELS[level]
+            meta = ffprobe_info(in_path)
+            dur = meta.get('duration') or 0
+            denoise = {'soft': '0.8:0.8:3:3', 'medium': '1.5:1.5:5:5',
+                       'strong': '2.5:2.5:7:7'}[strength]
+            la, ca = {'soft': ('0.3', '0.2'), 'medium': ('0.55', '0.35'),
+                      'strong': ('0.85', '0.5')}[strength]
+            vf = ('hqdn3d=%s,scale=-2:%d:flags=lanczos,unsharp=5:5:%s:5:5:%s'
+                  % (denoise, h, la, ca))
+            out_path = os.path.join(DOWNLOADS_DIR, job['id'] + '.mp4')
+            job['message'] = 'Meningkatkan kualitas video…'
+            run_ffmpeg_logged(job, [
+                '-i', in_path, '-vf', vf,
+                '-c:v', 'libx264', '-crf', '18', '-preset', 'veryfast',
+                '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k',
+                '-movflags', '+faststart', out_path], dur)
+            _finish_tool_job(job, out_path, base + ' HD', 'mp4')
+    except Exception as e:
+        job['status'] = 'error'
+        job['error'] = str(e)[:400]
+        job['message'] = 'Gagal'
+        cleanup_job_files(job['id'])
+    finally:
+        try:
+            os.remove(in_path)
+        except OSError:
+            pass
+
+
+@app.route('/api/enhance', methods=['POST'])
+def api_enhance():
+    """Upload foto/video → versi lebih tajam & HD (job background)."""
+    if 'file' not in request.files:
+        return jsonify({'error': 'Pilih file dulu.'}), 400
+    f = request.files['file']
+    orig = f.filename or 'file'
+    ext = orig.rsplit('.', 1)[-1].lower() if '.' in orig else ''
+    category = conv_category(ext)
+    if category == 'audio':
+        return jsonify({'error': 'Enhancer untuk audio belum ada — pakai file foto atau video.'}), 400
+    if category not in ('image', 'video'):
+        return jsonify({'error': 'Jenis file ini belum didukung enhancer.'}), 400
+    strength = (request.form.get('strength') or 'medium').strip()
+    if strength not in ENH_STRENGTHS:
+        strength = 'medium'
+    if category == 'image':
+        level = (request.form.get('level') or '2x').strip()
+        if level not in ENH_IMAGE_LEVELS:
+            level = '2x'
+        if not PIL_AVAILABLE:
+            return jsonify({'error': 'Enhancer foto butuh Pillow — install: pip install pillow'}), 500
+    else:
+        level = (request.form.get('level') or '1080').strip()
+        if level not in ENH_VIDEO_LEVELS:
+            level = '1080'
+        if not shutil.which('ffmpeg'):
+            return jsonify({'error': 'Enhancer video butuh ffmpeg di server.'}), 500
+    data = f.read(CONVERT_MAX_BYTES + 1)
+    if len(data) > CONVERT_MAX_BYTES:
+        return jsonify({'error': 'File terlalu besar (maks %d MB).'
+                                 % (CONVERT_MAX_BYTES // (1024 * 1024))}), 400
+    if not data:
+        return jsonify({'error': 'File kosong.'}), 400
+    job = new_job()
+    job['_title'] = os.path.splitext(os.path.basename(orig))[0][:90] or 'enhance'
+    job['_platform'] = 'enhancer'
+    job['_mode'] = category + ' HD ' + level
+    try:
+        _u = _auth_from_request()
+        if _u:
+            job['_user_id'] = _u['id']
+    except Exception:
+        pass
+    in_path = os.path.join(DOWNLOADS_DIR, job['id'] + '.in.' + ext)
+    with open(in_path, 'wb') as fh:
+        fh.write(data)
+    t = threading.Thread(target=run_enhance,
+                         args=(job, in_path, orig, category, level, strength),
+                         daemon=True)
+    t.start()
+    return jsonify({'ok': True, 'job_id': job['id']})
 
 
 if __name__ == '__main__':

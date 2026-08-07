@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=47">
+    <link rel="stylesheet" href="/static/style.css?v=49">
 </head>
 <body>
 
@@ -22,7 +22,7 @@
             </div>
             <div class="brand-text">
                 <span class="brand-title">KINGS <span class="accent">DOWNLOADER</span></span>
-                <span class="brand-sub">👑 Unduh apa pun, tanpa batas</span>
+                <span class="brand-sub"><svg class="ic" viewBox="0 0 24 24"><path d="M3 17l-1-9 5 3 5-7 5 7 5-3-1 9H3zm0 2h18v2H3v-2z" style="fill:currentColor;stroke:none"/></svg> Unduh apa pun, tanpa batas</span>
             </div>
         </div>
         <nav class="topnav" aria-label="Navigasi utama">
@@ -33,6 +33,14 @@
             <button class="nav-btn" id="nav-music" data-nav="music" onclick="showView('music')">
                 <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13M9 18a3 3 0 11-6 0 3 3 0 016 0zm12-2a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                 <span>Musik</span>
+            </button>
+            <button class="nav-btn" id="nav-convert" data-nav="convert" onclick="showView('convert')">
+                <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 019-9 9.75 9.75 0 016.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 01-9 9 9.75 9.75 0 01-6.74-2.74L3 16m0 5v-5h5"/></svg>
+                <span>Konversi</span>
+            </button>
+            <button class="nav-btn" id="nav-enhance" data-nav="enhance" onclick="showView('enhance')">
+                <svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.6L19.4 10l-5.6 1.8L12 17.4l-1.8-5.6L4.6 10l5.6-1.4L12 3zM19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9L19 14zM5 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7.7-2z"/></svg>
+                <span>HD Enhancer</span>
             </button>
             <button class="nav-btn" id="nav-manga" data-nav="manga" onclick="showView('manga')">
                 <svg viewBox="0 0 24 24"><path d="M4 4h16v14H4zM4 8h16M8 14l2-2 2 2 4-4"/></svg>
@@ -244,6 +252,128 @@
             <div id="music-results" class="music-results"></div>
         </section>
 
+        <!-- ================= VIEW: KONVERSI (ala FreeConvert) ================= -->
+        <section id="view-convert" class="view hidden">
+            <div class="music-hero">
+                <span class="music-hero-badge">
+                    <svg viewBox="0 0 24 24" class="ic"><path d="M3 12a9 9 0 019-9 9.75 9.75 0 016.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 01-9 9 9.75 9.75 0 01-6.74-2.74L3 16m0 5v-5h5"/></svg>
+                    Konversi File — ubah format apa pun
+                </span>
+                <p class="muted" style="font-size:12.5px">Pilih file video, audio, atau gambar → pilih format tujuan → konversi. Semua diproses di server, gratis, tanpa batas harian.</p>
+            </div>
+            <div class="card mb-3">
+                <div class="conv-drop" id="conv-drop" role="button" tabindex="0" aria-label="Pilih file untuk dikonversi">
+                    <svg viewBox="0 0 24 24" class="conv-drop-ic"><path d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v2a3 3 0 003 3h10a3 3 0 003-3v-2" style="fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"/></svg>
+                    <b>Pilih file</b>
+                    <span class="muted">atau seret &amp; letakkan ke sini</span>
+                    <span class="muted" id="conv-drop-hint" style="font-size:11px">Video, audio, atau gambar</span>
+                    <input type="file" id="conv-file" class="hidden">
+                </div>
+                <div id="conv-config" class="hidden" style="margin-top:14px">
+                    <div class="conv-file-row">
+                        <span class="conv-file-ic" id="conv-file-ic"></span>
+                        <div class="conv-file-meta">
+                            <b class="no-translate" id="conv-file-name">–</b>
+                            <span class="muted" id="conv-file-sub">–</span>
+                        </div>
+                        <button class="btn ghost mini" id="conv-change">Ganti file</button>
+                    </div>
+                    <div class="conv-row">
+                        <span class="conv-lbl">Format tujuan</span>
+                        <div class="filter-pills" id="conv-target-pills"></div>
+                    </div>
+                    <div class="conv-row" id="conv-quality-row">
+                        <span class="conv-lbl">Kualitas</span>
+                        <div class="filter-pills" id="conv-quality-pills">
+                            <button class="pill" data-q="high">Tinggi</button>
+                            <button class="pill active" data-q="medium">Seimbang</button>
+                            <button class="pill" data-q="small">Kecil (hemat)</button>
+                        </div>
+                    </div>
+                    <div class="conv-row hidden" id="conv-imgq-row">
+                        <span class="conv-lbl">Kualitas gambar</span>
+                        <input type="range" id="conv-imgq" min="40" max="100" value="90" style="flex:1;min-width:120px">
+                        <b id="conv-imgq-val" style="min-width:42px;text-align:right">90%</b>
+                    </div>
+                    <button class="btn primary" id="conv-go" onclick="convertStart()">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M3 12a9 9 0 019-9 9.75 9.75 0 016.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 01-9 9 9.75 9.75 0 01-6.74-2.74L3 16m0 5v-5h5"/></svg>
+                        Konversi Sekarang
+                    </button>
+                </div>
+                <div id="conv-results" style="margin-top:14px"></div>
+            </div>
+            <div class="card">
+                <div class="card-head">
+                    <span class="card-ic"><svg viewBox="0 0 24 24" class="ic"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg></span>
+                    <h3 class="card-title">Kombinasi yang didukung</h3>
+                </div>
+                <ul class="steps">
+                    <li><b>Video</b> (mp4, mkv, webm, mov, avi, dll) → MP4, WebM, MKV, MOV, AVI, GIF, atau ekstrak audio (MP3, M4A, WAV, OGG, FLAC).</li>
+                    <li><b>Audio</b> (mp3, wav, ogg, m4a, flac, dll) → MP3, M4A, WAV, OGG, FLAC, AAC.</li>
+                    <li><b>Gambar</b> (jpg, png, webp, gif, bmp) → JPG, PNG, WebP, GIF, BMP — animasi GIF tetap bergerak.</li>
+                    <li>Kualitas <b>Tinggi</b> = CRF 18 / 320 kbps (nyaris tanpa kehilangan) · <b>Seimbang</b> = standar · <b>Kecil</b> = ukuran minimum.</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- ================= VIEW: HD ENHANCER ================= -->
+        <section id="view-enhance" class="view hidden">
+            <div class="music-hero">
+                <span class="music-hero-badge">
+                    <svg viewBox="0 0 24 24" class="ic"><path d="M12 3l1.8 5.6L19.4 10l-5.6 1.8L12 17.4l-1.8-5.6L4.6 10l5.6-1.4L12 3zM19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9L19 14zM5 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7.7-2z"/></svg>
+                    HD Enhancer — foto &amp; video jadi jernih
+                </span>
+                <p class="muted" style="font-size:12.5px">Tingkatkan kualitas foto &amp; video: perbesar resolusi, hilangkan noise, pertajam detail, dan poles warna — diproses nyata di server.</p>
+            </div>
+            <div class="card mb-3">
+                <div class="conv-drop" id="enh-drop" role="button" tabindex="0" aria-label="Pilih foto atau video untuk ditingkatkan">
+                    <svg viewBox="0 0 24 24" class="conv-drop-ic"><path d="M12 3l1.8 5.6L19.4 10l-5.6 1.8L12 17.4l-1.8-5.6L4.6 10l5.6-1.4L12 3z" style="fill:none;stroke:currentColor;stroke-width:1.8;stroke-linejoin:round"/></svg>
+                    <b>Pilih foto / video</b>
+                    <span class="muted">atau seret &amp; letakkan ke sini</span>
+                    <span class="muted" id="enh-drop-hint" style="font-size:11px">Foto blur/buram jadi tajam · Video pecah jadi HD</span>
+                    <input type="file" id="enh-file" class="hidden" accept="image/*,video/*">
+                </div>
+                <div id="enh-config" class="hidden" style="margin-top:14px">
+                    <div class="conv-file-row">
+                        <span class="conv-file-ic" id="enh-file-ic"></span>
+                        <div class="conv-file-meta">
+                            <b class="no-translate" id="enh-file-name">–</b>
+                            <span class="muted" id="enh-file-sub">–</span>
+                        </div>
+                        <button class="btn ghost mini" id="enh-change">Ganti file</button>
+                    </div>
+                    <div class="conv-row" id="enh-level-row">
+                        <span class="conv-lbl" id="enh-level-lbl">Perbesar</span>
+                        <div class="filter-pills" id="enh-level-pills"></div>
+                    </div>
+                    <div class="conv-row">
+                        <span class="conv-lbl">Kekuatan poles</span>
+                        <div class="filter-pills" id="enh-strength-pills">
+                            <button class="pill" data-s="soft">Halus</button>
+                            <button class="pill active" data-s="medium">Standar</button>
+                            <button class="pill" data-s="strong">Kuat</button>
+                        </div>
+                    </div>
+                    <button class="btn primary" id="enh-go" onclick="enhanceStart()">
+                        <svg viewBox="0 0 24 24" class="ic"><path d="M12 3l1.8 5.6L19.4 10l-5.6 1.8L12 17.4l-1.8-5.6L4.6 10l5.6-1.4L12 3z"/></svg>
+                        Tingkatkan Kualitas
+                    </button>
+                </div>
+                <div id="enh-results" style="margin-top:14px"></div>
+            </div>
+            <div class="card">
+                <div class="card-head">
+                    <span class="card-ic"><svg viewBox="0 0 24 24" class="ic"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg></span>
+                    <h3 class="card-title">Cara kerjanya</h3>
+                </div>
+                <ul class="steps">
+                    <li><b>Foto</b> — diperbesar 2× atau 4× dengan algoritma Lanczos, noise dihaluskan, detail dipertajam (unsharp mask), lalu warna &amp; kontras dipoles. Hasil: PNG tajam.</li>
+                    <li><b>Video</b> — resolusi dinaikkan ke 720p / 1080p / 2K / 4K, noise time-based dibersihkan (hqdn3d), ketajaman ditambah, lalu di-encode ulang H.264 kualitas tinggi (CRF 18) dengan audio AAC.</li>
+                    <li>Semakin besar file &amp; semakin tinggi target, semakin lama prosesnya — progress bar menunjukkan kemajuan nyata dari server.</li>
+                </ul>
+            </div>
+        </section>
+
         <!-- ================= VIEW: MANGA ================= -->
         <section id="view-manga" class="view hidden">
             <div class="music-hero">
@@ -304,11 +434,11 @@
                     <span class="crb-label">Membalas</span>
                     <span class="crb-who" id="chat-reply-who">–</span>
                     <span class="crb-text" id="chat-reply-text">–</span>
-                    <button class="crb-x" onclick="chatCancelReply()" title="Batal" aria-label="Batal balas">✕</button>
+                    <button class="crb-x" onclick="chatCancelReply()" title="Batal" aria-label="Batal balas"><svg class="ic" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
                 </div>
                 <div class="chat-attach hidden" id="chat-attach">
                     <span id="chat-attach-name">–</span>
-                    <button class="crb-x" onclick="chatClearAttach()" title="Hapus lampiran" aria-label="Hapus lampiran">✕</button>
+                    <button class="crb-x" onclick="chatClearAttach()" title="Hapus lampiran" aria-label="Hapus lampiran"><svg class="ic" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
                 </div>
                 <div class="chat-input-row">
                     <button id="chat-attach-btn" class="btn ghost chat-paperclip" onclick="chatPickFile()" title="Lampirkan file/gambar/video" aria-label="Lampirkan">
@@ -343,9 +473,9 @@
                 </div>
                 <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
                     <div class="filter-pills" id="tkt-type-pills">
-                        <button class="pill active" data-t="bug" onclick="tktSetType('bug')">🐞 Bug</button>
-                        <button class="pill" data-t="feedback" onclick="tktSetType('feedback')">💬 Feedback</button>
-                        <button class="pill" data-t="platform" onclick="tktSetType('platform')">➕ Usulan Platform</button>
+                        <button class="pill active" data-t="bug" onclick="tktSetType('bug')"><svg class="ic" viewBox="0 0 24 24"><path d="M9 9h6a3 3 0 013 3v4a6 6 0 01-12 0v-4a3 3 0 013-3zM6 9L3 7m18 2l-3 2M3 21l3-3m15 3l-3-3M12 9V5M6.5 15h11"/></svg> Bug</button>
+                        <button class="pill" data-t="feedback" onclick="tktSetType('feedback')"><svg class="ic" viewBox="0 0 24 24"><path d="M21 12a8 8 0 01-8 8H4l2-3a8 8 0 1115-5z"/></svg> Feedback</button>
+                        <button class="pill" data-t="platform" onclick="tktSetType('platform')"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Usulan Platform</button>
                     </div>
                     <input type="text" id="tkt-subject" placeholder="Judul singkat (opsional)" maxlength="150" style="width:100%;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;padding:10px 13px;color:var(--text);outline:none">
                     <textarea id="tkt-msg" rows="3" maxlength="3000" placeholder="Ceritakan detailnya di sini…" style="width:100%;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;padding:11px 13px;color:var(--text);font-family:var(--font-body);font-size:13.5px;outline:none;resize:vertical"></textarea>
@@ -373,14 +503,14 @@
             <div id="admin-panel" class="hidden">
                 <div class="card mb-3" style="border-color:#f59e0b55">
                     <div class="card-head">
-                        <span class="card-ic grad-ic">👑</span>
+                        <span class="card-ic grad-ic"><svg class="ic" viewBox="0 0 24 24"><path d="M3 17l-1-9 5 3 5-7 5 7 5-3-1 9H3zm0 2h18v2H3v-2z" style="fill:currentColor;stroke:none"/></svg></span>
                         <h3 class="card-title">Panel Admin — Kirim Announcement</h3>
                     </div>
                     <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
                         <div class="filter-pills" id="ann-type-pills">
-                            <button class="pill active" data-t="info" onclick="annSetType('info')">ℹ️ Info</button>
-                            <button class="pill" data-t="warning" onclick="annSetType('warning')">⚠️ Warning</button>
-                            <button class="pill" data-t="emergency" onclick="annSetType('emergency')">🚨 Emergency</button>
+                            <button class="pill active" data-t="info" onclick="annSetType('info')"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg> Info</button>
+                            <button class="pill" data-t="warning" onclick="annSetType('warning')"><svg class="ic" viewBox="0 0 24 24"><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0zM12 9v4m0 4h.01"/></svg> Warning</button>
+                            <button class="pill" data-t="emergency" onclick="annSetType('emergency')"><svg class="ic" viewBox="0 0 24 24"><path d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 00-4-5.7V5a2 2 0 10-4 0v.3A6 6 0 006 11v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg> Emergency</button>
                         </div>
                         <input type="text" id="ann-title" placeholder="Judul announcement" maxlength="150" style="width:100%;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;padding:10px 13px;color:var(--text);outline:none">
                         <textarea id="ann-msg" rows="2" maxlength="2000" placeholder="Isi pesan announcement…" style="width:100%;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;padding:11px 13px;color:var(--text);font-family:var(--font-body);font-size:13.5px;outline:none;resize:vertical"></textarea>
@@ -394,7 +524,7 @@
 
                 <div class="card mb-3" style="border-color:#f59e0b55">
                     <div class="card-head">
-                        <span class="card-ic grad-ic">📥</span>
+                        <span class="card-ic grad-ic"><svg class="ic" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2M5.5 5.1L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.5-6.9A2 2 0 0016.7 4H7.3a2 2 0 00-1.8 1.1z"/></svg></span>
                         <h3 class="card-title">Kotak Masuk Tiket (Semua User)</h3>
                     </div>
                     <div class="filter-pills" id="admin-tkt-filter" style="margin-top:10px">
@@ -413,7 +543,7 @@
             <div class="modal-box ticket-thread-box">
                 <div class="modal-head">
                     <h3 id="tkt-thread-title">Tiket</h3>
-                    <button class="modal-x" onclick="closeTicketThread()" aria-label="Tutup">✕</button>
+                    <button class="modal-x" onclick="closeTicketThread()" aria-label="Tutup"><svg class="ic" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
                 </div>
                 <div id="tkt-thread-meta" class="muted" style="font-size:11.5px;padding:0 2px 8px"></div>
                 <div id="tkt-thread-messages" class="ticket-thread-msgs"></div>
@@ -507,7 +637,7 @@
     </main>
 
     <footer class="footer">
-        <span>KINGS DOWNLOADER 👑 — gratis untuk semua.</span>
+        <span>KINGS DOWNLOADER <svg class="ic" viewBox="0 0 24 24"><path d="M3 17l-1-9 5 3 5-7 5 7 5-3-1 9H3zm0 2h18v2H3v-2z" style="fill:currentColor;stroke:none"/></svg> — gratis untuk semua.</span>
         <span class="muted">Tanpa watermark · Hormati hak cipta.</span>
         <span class="ui-ver" title="Versi UI">Versi UI v<b id="ui-version">–</b></span>
     </footer>
@@ -590,8 +720,8 @@
                 <div class="brand-logo">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                 </div>
-                <h2>Masuk ke <span class="grad">KINGS DOWNLOADER</span> 👑</h2>
-                <p class="muted">Buat akun gratis atau lanjut sebagai tamu. Riwayat download &amp; chat tersimpan di akunmu. Username bebas — pakai emoji, simbol, atau spasi sesukamu! 😎</p>
+                <h2>Masuk ke <span class="grad">KINGS DOWNLOADER</span></h2>
+                <p class="muted">Buat akun gratis atau lanjut sebagai tamu. Riwayat download &amp; chat tersimpan di akunmu. Username bebas — pakai emoji, simbol, atau spasi sesukamu!</p>
             </div>
             <div class="login-tabs">
                 <button class="pill active" id="lt-login" onclick="loginTab('login')">Masuk</button>
@@ -614,6 +744,6 @@
     <!-- ================= TOAST ================= -->
     <div id="toast" class="toast"></div>
 
-    <script src="/static/app.js?v=47"></script>
+    <script src="/static/app.js?v=49"></script>
 </body>
 </html>

@@ -265,7 +265,7 @@ Ganti domain tidak menghapus akun/data (data di volume `DATA_DIR`).
 2. **Render (gratis)** — deploy repo yang sama:
    - New Web Service → repo `Nna`
    - Build: `pip install -r requirements.txt`
-   - Start: `gunicorn --bind 0.0.0.0:${PORT:-10000} --timeout 120 --workers 1 --threads 8 app:app`
+   - Start: `gunicorn --bind 0.0.0.0:${PORT:-10000} --timeout 120 --workers 1 --threads 16 app:app`
    - Tambah **Persistent Disk** mount `/data` + env `DATA_DIR=/data`.
 3. **VPS murah** — pasang Python+ffmpeg, jalankan gunicorn, arahkan domain.
 4. **Termux + Cloudflare Tunnel** — jalankan di HP, buka publik gratis lewat tunnel.

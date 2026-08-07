@@ -183,7 +183,7 @@ Railway menawarkan trial sementara; kalau habis, beberapa pilihan:
 2. **Render (gratis)** — deploy ulang dari repo GitHub yang sama:
    - Buat akun di render.com → **New → Web Service** → pilih repo `Nna`.
    - Build command: `pip install -r requirements.txt`
-   - Start command: `gunicorn --bind 0.0.0.0:${PORT:-10000} --timeout 120 --workers 1 --threads 8 app:app`
+   - Start command: `gunicorn --bind 0.0.0.0:${PORT:-10000} --timeout 120 --workers 1 --threads 16 app:app`
    - Tambah **Persistent Disk** (mount path `/data`) + env `DATA_DIR=/data`
      → akun/chat/riwayat tidak hilang saat redeploy.
    - Gratis (spin-down saat tidak dipakai, nyala lagi otomatis saat dikunjungi).

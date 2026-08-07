@@ -38,9 +38,10 @@ RUN mkdir -p downloads
 # Bind ke port yang ditentukan env (Render/Railway memakai $PORT)
 ENV PORT=5000
 
-# Jalankan dengan Gunicorn — 1 worker agar status job download (yang tersimpan
-# di memori proses) selalu konsisten; download berjalan di background thread
-# sehingga timeout gunicorn tidak masalah untuk file besar. --threads dipakai
-# supaya pemutar musik (stream proxy) dan permintaan lain bisa jalan bersamaan
-# untuk banyak pengguna.
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5000} --timeout 120 --workers 1 --threads 8 app:app"]
+# Jalankan dengan Gunicorn — 1 worker agar status job download & kanal live
+# (SSE /api/live, keduanya di memori proses) selalu konsisten; download berjalan
+# di background thread sehingga timeout gunicorn tidak masalah untuk file besar.
+# --threads 16 dipakai supaya pemutar musik, koneksi live SSE, dan permintaan
+# lain bisa jalan bersamaan untuk banyak pengguna (SSE melepas thread tiap ±100
+# detik lalu browser menyambung ulang otomatis).
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5000} --timeout 120 --workers 1 --threads 16 app:app"]
